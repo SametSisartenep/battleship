@@ -13,11 +13,16 @@ int debug;
 char deffont[] = "/lib/font/bit/pelm/unicode.9.font";
 char winspec[32];
 Channel *drawchan;
+Channel *ingress, *egress;
 RFrame worldrf;
 Image *screenb;
 Image *tiletab[NTILES];
 Board alienboard;
 Board localboard;
+
+struct {
+	int state;
+} game;
 
 
 Point
@@ -177,10 +182,38 @@ initboards(void)
 	alienboard.p = Pt2(Boardmargin,Boardmargin,1);
 	memset(localboard.map, Twater, MAPW*MAPH);
 	localboard.p = addpt2(alienboard.p, Vec2(0,MAPH*TH+TH));
-	alienboard.bx = localboard.bx = Vec2(TW,0);
-	alienboard.by = localboard.by = Vec2(0,TH);
+	alienboard.bx = Vec2(TW,0);
+	localboard.bx = Vec2(TW,0);
+	alienboard.by = Vec2(0,TH);
+	localboard.by = Vec2(0,TH);
 	alienboard.bbox = Rpt(fromworld(alienboard.p), fromworld(addpt2(alienboard.p, Pt2(TW*MAPW,TH*MAPH,1))));
 	localboard.bbox = Rpt(fromworld(localboard.p), fromworld(addpt2(localboard.p, Pt2(TW*MAPW,TH*MAPH,1))));
+}
+
+void
+lmb(Mousectl *mc)
+{
+	Board *b;
+	Point2 cell;
+
+	b = nil;
+	if(ptinrect(mc->xy, alienboard.bbox))
+		b = &alienboard;
+	else if(ptinrect(mc->xy, localboard.bbox))
+		b = &localboard;
+
+	if(b != nil){
+		cell = toboard(b, mc->xy);
+		switch(game.state){
+		case Outlaying:
+			settile(b, cell, Tship);
+		case Playing:
+			settile(b, cell, Tmiss);
+			chanprint(egress, "shoot %d-%d", (int)cell.x, (int)cell.y);
+			break;
+		}
+	}
+	send(drawchan, nil);
 }
 
 void
@@ -190,15 +223,13 @@ mouse(Mousectl *mc)
 
 	switch(mc->buttons){
 	case 1:
-		if(ptinrect(mc->xy, alienboard.bbox))
-			settile(&alienboard, toboard(&alienboard, mc->xy), Tmiss);
-		if(ptinrect(mc->xy, localboard.bbox))
-			settile(&localboard, toboard(&localboard, mc->xy), Tmiss);
-		send(drawchan, nil);
+		lmb(mc);
 		break;
 	case 2:
+		//mmb(mc);
 		break;
-	case 3:
+	case 4:
+		//rmb(mc);
 		break;
 	}
 }
@@ -233,13 +264,15 @@ inputthread(void *arg)
 
 	in = arg;
 
-	a[0].op = CHANRCV; a[0].c = in->mc->c; a[0].v = &in->mc->Mouse;
-	a[1].op = CHANRCV; a[1].c = in->mc->resizec; a[1].v = nil;
-	a[2].op = CHANRCV; a[2].c = in->kc->c; a[2].v = &r;
+	a[0].c = in->mc->c; a[0].v = &in->mc->Mouse; a[0].op = CHANRCV;
+	a[1].c = in->mc->resizec; a[1].v = nil; a[1].op = CHANRCV;
+	a[2].c = in->kc->c; a[2].v = &r; a[2].op = CHANRCV;
 	a[3].op = CHANEND;
 
 	for(;;)
 		switch(alt(a)){
+		case -1:
+			sysfatal("input thread interrupted");
 		case 0:
 			mouse(in->mc);
 			break;
@@ -250,6 +283,51 @@ inputthread(void *arg)
 			key(r);
 			break;
 		}
+}
+
+void
+netrecvthread(void *arg)
+{
+	Ioproc *io;
+	char buf[256];
+	int n, fd;
+
+	threadsetname("netrecvthread");
+
+	fd = *(int*)arg;
+	io = ioproc();
+
+	while((n = ioread(io, fd, buf, sizeof(buf)-1)) > 0){
+		buf[n] = 0;
+		if(debug)
+			fprint(2, "rcvd '%s'\n", buf);
+		if(strcmp(buf, "wait") == 0)
+			game.state = Waiting1;
+		else if(strcmp(buf, "play") == 0)
+			game.state = Playing;
+//		chanprint(ingress, "%s", buf);
+	}
+	closeioproc(io);
+	threadexitsall("connection lost");
+}
+
+void
+netsendthread(void *arg)
+{
+	char *s;
+	int fd;
+
+	threadsetname("netsendthread");
+
+	fd = *(int*)arg;
+
+	while(recv(egress, &s) > 0){
+		if(write(fd, s, strlen(s)) != strlen(s))
+			break;
+		if(debug)
+			fprint(2, "sent '%s'\n", s);
+	}
+	threadexitsall("connection lost");
 }
 
 void
@@ -286,6 +364,9 @@ threadmain(int argc, char *argv[])
 	else if(debug)
 		fprint(2, "line established\n");
 
+	if(write(fd, "join", 4) != 4)
+		sysfatal("whoops: %r");
+
 	snprint(winspec, sizeof winspec, "-dx %d -dy %d", SCRW, SCRH);
 	if(newwindow(winspec) < 0)
 		sysfatal("newwindow: %r");
@@ -306,10 +387,15 @@ threadmain(int argc, char *argv[])
 
 	inittiles();
 	initboards();
+	game.state = Waiting0;
 
 	drawchan = chancreate(sizeof(void*), 0);
+	ingress = chancreate(sizeof(char*), 0);
+	egress = chancreate(sizeof(char*), 0);
 	proccreate(showproc, nil, mainstacksize);
 	threadcreate(inputthread, &in, mainstacksize);
+	threadcreate(netrecvthread, &fd, mainstacksize);
+	threadcreate(netsendthread, &fd, mainstacksize);
 	send(drawchan, nil);
 	yield();
 }
