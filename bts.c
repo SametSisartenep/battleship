@@ -19,6 +19,7 @@ Image *screenb;
 Image *tiletab[NTILES];
 Board alienboard;
 Board localboard;
+Ship *carrier;
 
 struct {
 	int state;
@@ -84,6 +85,25 @@ drawtile(Image *dst, Board *b, Point2 cell, int type)
 }
 
 void
+drawship(Image *dst, Ship *s)
+{
+	Point2 p, sv;
+	int i;
+
+	p = s->p;
+	switch(s->orient){
+	case OH: sv = Vec2(1,0); break;
+	case OV: sv = Vec2(0,1); break;
+	default: return;
+	}
+
+	for(i = 0; i < s->ncells; i++){
+		drawtile(dst, &localboard, p, s->hit[i]? Thit: Tship);
+		p = addpt2(p, sv);
+	}
+}
+
+void
 drawboard(Image *dst, Board *b)
 {
 	int i, j;
@@ -101,6 +121,7 @@ redraw(void)
 	draw(screenb, screenb->r, display->black, nil, ZP);
 	drawboard(screenb, &alienboard);
 	drawboard(screenb, &localboard);
+	drawship(screenb, carrier);
 
 	draw(screen, screen->r, screenb, nil, ZP);
 
@@ -191,6 +212,44 @@ initboards(void)
 }
 
 void
+initships(void)
+{
+	Point2 sv;
+
+	carrier = emalloc(sizeof *carrier);
+	carrier->p = Pt2(2,4,1);
+	carrier->orient = OV;
+	carrier->ncells = 5;
+	carrier->hit = emalloc(carrier->ncells*sizeof(int));
+	memset(carrier->hit, 0, carrier->ncells*sizeof(int));
+	carrier->sunk = 0;
+	switch(carrier->orient){
+	case OH: sv = Vec2(1,0); break;
+	case OV: sv = Vec2(0,1); break;
+	default: sysfatal("initships: wrong ship orientation");
+	}
+	carrier->bbox = Rpt(
+		fromboard(&localboard, carrier->p),
+		fromboard(&localboard, addpt2(addpt2(carrier->p, mulpt2(sv, carrier->ncells)), Vec2(sv.y,sv.x)))
+	);
+}
+
+void
+placeship(Mousectl *mc, Ship *s)
+{
+	for(;;){
+		if(readmouse(mc) < 0)
+			break;
+		mc->xy = subpt(mc->xy, screen->r.min);
+		if(ptinrect(mc->xy, localboard.bbox) && mc->buttons == 1){
+			s->p = toboard(&localboard, mc->xy);
+			send(drawchan, nil);
+			break;
+		}
+	}
+}
+
+void
 lmb(Mousectl *mc)
 {
 	Board *b;
@@ -202,18 +261,39 @@ lmb(Mousectl *mc)
 	else if(ptinrect(mc->xy, localboard.bbox))
 		b = &localboard;
 
-	if(b != nil){
-		cell = toboard(b, mc->xy);
-		switch(game.state){
-		case Outlaying:
-			settile(b, cell, Tship);
-		case Playing:
-			settile(b, cell, Tmiss);
-			chanprint(egress, "shoot %d-%d", (int)cell.x, (int)cell.y);
-			break;
-		}
+	if(b == nil)
+		return;
+
+	cell = toboard(b, mc->xy);
+	switch(game.state){
+	case Outlaying:
+		settile(b, cell, Tship);
+		break;
+	case Playing:
+		settile(b, cell, Tmiss);
+		chanprint(egress, "shoot %d-%d", (int)cell.x, (int)cell.y);
+		break;
 	}
 	send(drawchan, nil);
+}
+
+void
+rmb(Mousectl *mc)
+{
+	enum {
+		PLACESHIP,
+	};
+	static char *items[] = {
+	 [PLACESHIP]	"place ship",
+		nil
+	};
+	static Menu menu = { .item = items };
+
+	switch(menuhit(3, mc, &menu, _screen)){
+	case PLACESHIP:
+		placeship(mc, carrier);
+		break;
+	}
 }
 
 void
@@ -226,10 +306,10 @@ mouse(Mousectl *mc)
 		lmb(mc);
 		break;
 	case 2:
-		//mmb(mc);
+//		mmb(mc);
 		break;
 	case 4:
-		//rmb(mc);
+		rmb(mc);
 		break;
 	}
 }
@@ -387,6 +467,7 @@ threadmain(int argc, char *argv[])
 
 	inittiles();
 	initboards();
+	initships();
 	game.state = Waiting0;
 
 	drawchan = chancreate(sizeof(void*), 0);

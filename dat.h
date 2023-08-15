@@ -5,6 +5,9 @@ enum {
 	Tmiss,
 	NTILES,
 
+	OH, /* horizontal */
+	OV, /* vertical */
+
 	Waiting0 = 0,
 	Outlaying,
 	Waiting1,
@@ -22,8 +25,8 @@ enum {
 };
 
 typedef struct Input Input;
-typedef struct Board Board;
 typedef struct Ship Ship;
+typedef struct Board Board;
 typedef struct Player Player;
 typedef struct Playerq Playerq;
 typedef struct Chanpipe Chanpipe;
@@ -34,6 +37,16 @@ struct Input
 	Keyboardctl *kc;
 };
 
+struct Ship
+{
+	Point2 p; /* board cell */
+	Rectangle bbox;
+	int orient;
+	int ncells;
+	int *hit; /* |hit| = ncells and hit = {x: 0 ≤ x ≤ 1} */
+	int sunk;
+};
+
 struct Board
 {
 	RFrame;
@@ -41,17 +54,11 @@ struct Board
 	Rectangle bbox;
 };
 
-struct Ship
-{
-	RFrame;
-	int ncells;
-	int sunk;
-};
-
 struct Player
 {
 	int fd;
 	int sfd;
+	Channel *mc; /* for matching */
 	Player *o; /* opponent */
 };
 
