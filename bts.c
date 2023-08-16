@@ -49,7 +49,12 @@ fromboard(Board *b, Point2 p)
 Point2
 toboard(Board *b, Point p)
 {
-	return rframexform(rframexform(Pt2(p.x,p.y,1), worldrf), *b);
+	Point2 np;
+
+	np = rframexform(rframexform(Pt2(p.x,p.y,1), worldrf), *b);
+	np.x = (int)np.x;
+	np.y = (int)np.y;
+	return np;
 }
 
 Image *
