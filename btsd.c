@@ -24,7 +24,7 @@ pushplayer(Player *p)
 	playerq.players[playerq.nplayers-1] = p;
 	qunlock(&playerq);
 	if(debug)
-		fprint(2, "pushed fd %d sfd %d o %p\n", p->fd, p->sfd, p->o);
+		fprint(2, "pushed fd %d sfd %d state %d\n", p->fd, p->sfd, p->state);
 }
 
 Player *
@@ -33,14 +33,21 @@ popplayer(void)
 	Player *p;
 
 	p = nil;
-	if(playerq.nplayers > 0){
-		qlock(&playerq);
+	qlock(&playerq);
+	if(playerq.nplayers > 0)
 		p = playerq.players[--playerq.nplayers];
-		qunlock(&playerq);
-	}
+	qunlock(&playerq);
 	if(debug)
-		fprint(2, "poppin fd %d sfd %d o %p\n", p->fd, p->sfd, p->o);
+		fprint(2, "poppin fd %d sfd %d state %d\n", p->fd, p->sfd, p->state);
 	return p;
+}
+
+void
+freeplayer(Player *p)
+{
+	close(p->sfd);
+	close(p->fd);
+	free(p);
 }
 
 void
@@ -58,9 +65,11 @@ netrecvthread(void *arg)
 		buf[n] = 0;
 		chanprint(cp->c, "%s", buf);
 	}
-	chanclose(cp->c);
 	if(debug)
 		fprint(2, "[%d] lost connection\n", getpid());
+	closeioproc(io);
+	chanclose(cp->c);
+	threadexits(nil);
 }
 
 void
@@ -72,8 +81,6 @@ serveproc(void *arg)
 	Alt a[3];
 	int i, n0, tid[2];
 	char *s;
-
-	threadsetname("serveproc ");
 
 	m = arg;
 	s = nil;
@@ -95,42 +102,45 @@ serveproc(void *arg)
 	a[1].c = cp[1].c; a[1].v = &s; a[1].op = CHANRCV;
 	a[2].op = CHANEND;
 
+	threadsetgrp(truerand());
 	tid[0] = threadcreate(netrecvthread, &cp[0], mainstacksize);
 	tid[1] = threadcreate(netrecvthread, &cp[1], mainstacksize);
 
-	n0 = truerand();
-	write(m[n0%2]->fd, "wait", 4);
-	write(m[(n0+1)%2]->fd, "play", 4);
+	assert(m[0]->state == Waiting0 && m[1]->state == Waiting0);
+	write(m[0]->fd, "layout", 6);
+	write(m[1]->fd, "layout", 6);
+	m[0]->state = Outlaying;
+	m[1]->state = Outlaying;
 
 	while((i = alt(a)) >= 0){
-		if(debug)
-			fprint(2, "[%d] said '%s'\n", getpid(), s);
 		if(a[i].err != nil){
-			write(m[i^1]->fd, "won", 3);
+			if(debug)
+				fprint(2, "alt: %s\n", a[i].err);
+			write(m[i^1]->fd, "win", 3);
+			m[i^1]->state = Waiting0;
 			pushplayer(m[i^1]);
-			free(m[i]);
-			goto out;
+			freeplayer(m[i]);
+			break;
 		}
+		if(debug)
+			fprint(2, "[%d] said '%s'\n", i, s);
 		if(write(m[i^1]->fd, s, strlen(s)) != strlen(s)){
-			write(m[i]->fd, "won", 3);
-			/* TODO free the player */
+			write(m[i]->fd, "win", 3);
+			m[i]->state = Waiting0;
 			pushplayer(m[i]);
-			free(m[i^1]);
-			goto out;
+			freeplayer(m[i^1]);
+			free(s);
+			break;
 		}
 		free(s);
 	}
-out:
 	if(debug)
 		fprint(2, "[%d] serveproc ending\n", getpid());
-	chanclose(cp[0].c);
-	chanclose(cp[1].c);
-	close(cp[i].fd);
-	/* TODO make sure this is the last thread to exit */
-//	recv(cp[0].done)
-//	recv(cp[1].done)
 	free(m);
-	yield();
+	chanfree(cp[0].c);
+	chanfree(cp[1].c);
+	threadkillgrp(threadgetgrp());
+	threadexits(nil);
 }
 
 void
@@ -145,16 +155,14 @@ reaper(void *)
 	for(;;){
 		for(i = 0; i < playerq.nplayers; i++){
 			if(debug)
-				fprint(2, "reapin fd %d sfd %d o %p?",
-						playerq.players[i]->fd, playerq.players[i]->sfd, playerq.players[i]->o);
-			n = read(playerq.players[i]->sfd, buf, sizeof buf);
-			if(n < 0 || strncmp(buf, "Closed", 6) == 0){
+				fprint(2, "reapin fd %d sfd %d state %d?",
+						playerq.players[i]->fd, playerq.players[i]->sfd, playerq.players[i]->state);
+			n = pread(playerq.players[i]->sfd, buf, sizeof buf, 0);
+			if(n < 0 || strncmp(buf, "Close", 5) == 0){
 				if(debug)
 					fprint(2, " yes\n");
 				qlock(&playerq);
-				close(playerq.players[i]->fd);
-				close(playerq.players[i]->sfd);
-				free(playerq.players[i]);
+				freeplayer(playerq.players[i]);
 				memmove(&playerq.players[i], &playerq.players[i+1], (--playerq.nplayers-i)*sizeof(Player*));
 				qunlock(&playerq);
 			}else if(debug)
@@ -180,38 +188,17 @@ matchmaker(void *)
 		match = emalloc(2*sizeof(Player*));
 		match[0] = popplayer();
 		match[1] = popplayer();
-		match[1]->o = match[0];
-		match[0]->o = match[1];
 
 		proccreate(serveproc, match, mainstacksize);
 	}
 }
 
 void
-playerproc(void *arg)
-{
-	char buf[256];
-	int fd, n;
-
-	threadsetname("playerproc");
-
-	fd = *(int*)arg;
-
-	while((n = read(fd, buf, sizeof(buf)-1)) > 0){
-		buf[n] = 0;
-		if(debug)
-			fprint(2, "[%d] rcvd '%s'\n", getpid(), buf);
-	}
-	if(debug)
-		fprint(2, "[%d] lost connection\n", getpid());
-}
-
-void
 listenthread(void *arg)
 {
-	char *addr, adir[40], ldir[40]/*, aux[128], *s*/;
-	int acfd, lcfd, dfd/*, sfd*/;
-//	Player *p;
+	char *addr, adir[40], ldir[40], aux[128], *s;
+	int acfd, lcfd, dfd, sfd;
+	Player *p;
 
 	addr = arg;
 
@@ -224,20 +211,19 @@ listenthread(void *arg)
 
 	while((lcfd = listen(adir, ldir)) >= 0){
 		if((dfd = accept(lcfd, ldir)) >= 0){
-//			fd2path(dfd, aux, sizeof aux);
-//			s = strrchr(aux, '/');
-//			*s = 0;
-//			snprint(aux, sizeof aux, "%s/status", aux);
-//			sfd = open(aux, OREAD);
-//			if(sfd < 0)
-//				sysfatal("open: %r");
-//
-//			p = emalloc(sizeof *p);
-//			p->fd = dfd;
-//			p->sfd = sfd;
-//			p->mc = nil;
-//			pushplayer(p);
-			proccreate(playerproc, &dfd, mainstacksize);
+			fd2path(dfd, aux, sizeof aux);
+			s = strrchr(aux, '/');
+			*s = 0;
+			snprint(aux, sizeof aux, "%s/status", aux);
+			sfd = open(aux, OREAD);
+			if(sfd < 0)
+				sysfatal("open: %r");
+
+			p = emalloc(sizeof *p);
+			p->fd = dfd;
+			p->sfd = sfd;
+			p->state = Waiting0;
+			pushplayer(p);
 		}
 		close(lcfd);
 	}
@@ -269,8 +255,8 @@ threadmain(int argc, char *argv[])
 	if(argc != 0)
 		usage();
 
-//	proccreate(matchmaker, nil, mainstacksize);
-//	proccreate(reaper, nil, mainstacksize);
+	proccreate(matchmaker, nil, mainstacksize);
+	proccreate(reaper, nil, mainstacksize);
 	threadcreate(listenthread, addr, mainstacksize);
 	yield();
 }

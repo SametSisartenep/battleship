@@ -10,7 +10,7 @@ enum {
 
 	Waiting0 = 0,
 	Outlaying,
-	Waiting1,
+	Waiting,
 	Playing,
 
 	Boardmargin = 50,
@@ -43,7 +43,7 @@ struct Ship
 	Rectangle bbox;
 	int orient;
 	int ncells;
-	int *hit; /* |hit| = ncells and hit = {x: 0 ≤ x ≤ 1} */
+	int *hit; /* |hit| = ncells and hit ∈ {0,1} */
 	int sunk;
 };
 
@@ -58,8 +58,7 @@ struct Player
 {
 	int fd;
 	int sfd;
-	Channel *mc; /* for matching */
-	Player *o; /* opponent */
+	int state;
 };
 
 struct Playerq
