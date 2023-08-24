@@ -19,7 +19,8 @@ Image *screenb;
 Image *tiletab[NTILES];
 Board alienboard;
 Board localboard;
-Ship *carrier;
+Ship armada[NSHIPS];
+Ship *curship;
 
 struct {
 	int state;
@@ -55,6 +56,23 @@ toboard(Board *b, Point p)
 	np.x = (int)np.x;
 	np.y = (int)np.y;
 	return np;
+}
+
+Rectangle
+mkshipbbox(Point2 p, int o, int ncells)
+{
+	Point2 sv;
+
+	switch(o){
+	case OH: sv = Vec2(1,0); break;
+	case OV: sv = Vec2(0,1); break;
+	default: sysfatal("mkshipbbox: wrong ship orientation");
+	}
+
+	return Rpt(
+		fromboard(&localboard, p),
+		fromboard(&localboard, addpt2(addpt2(p, mulpt2(sv, ncells)), Vec2(sv.y,sv.x)))
+	);
 }
 
 Image *
@@ -109,6 +127,15 @@ drawship(Image *dst, Ship *s)
 }
 
 void
+drawships(Image *dst)
+{
+	int i;
+
+	for(i = 0; i < nelem(armada); i++)
+		drawship(dst, &armada[i]);
+}
+
+void
 drawboard(Image *dst, Board *b)
 {
 	int i, j;
@@ -126,7 +153,7 @@ redraw(void)
 	draw(screenb, screenb->r, display->black, nil, ZP);
 	drawboard(screenb, &alienboard);
 	drawboard(screenb, &localboard);
-	drawship(screenb, carrier);
+	drawships(screenb);
 
 	draw(screen, screen->r, screenb, nil, ZP);
 
@@ -206,51 +233,62 @@ initboards(void)
 {
 	memset(alienboard.map, Twater, MAPW*MAPH);
 	alienboard.p = Pt2(Boardmargin,Boardmargin,1);
+	alienboard.bx = Vec2(TW,0);
+	alienboard.by = Vec2(0,TH);
+	alienboard.bbox = Rpt(fromworld(alienboard.p), fromworld(addpt2(alienboard.p, Pt2(TW*MAPW,TH*MAPH,1))));
+
 	memset(localboard.map, Twater, MAPW*MAPH);
 	localboard.p = addpt2(alienboard.p, Vec2(0,MAPH*TH+TH));
-	alienboard.bx = Vec2(TW,0);
 	localboard.bx = Vec2(TW,0);
-	alienboard.by = Vec2(0,TH);
 	localboard.by = Vec2(0,TH);
-	alienboard.bbox = Rpt(fromworld(alienboard.p), fromworld(addpt2(alienboard.p, Pt2(TW*MAPW,TH*MAPH,1))));
 	localboard.bbox = Rpt(fromworld(localboard.p), fromworld(addpt2(localboard.p, Pt2(TW*MAPW,TH*MAPH,1))));
 }
 
 void
-initships(void)
+initarmada(void)
 {
-	Point2 sv;
+	Ship *s;
+	int i;
 
-	carrier = emalloc(sizeof *carrier);
-	carrier->p = Pt2(2,4,1);
-	carrier->orient = OV;
-	carrier->ncells = 5;
-	carrier->hit = emalloc(carrier->ncells*sizeof(int));
-	memset(carrier->hit, 0, carrier->ncells*sizeof(int));
-	carrier->sunk = 0;
-	switch(carrier->orient){
-	case OH: sv = Vec2(1,0); break;
-	case OV: sv = Vec2(0,1); break;
-	default: sysfatal("initships: wrong ship orientation");
+	s = nil;
+	for(i = 0; i < nelem(armada); i++){
+		s = &armada[i];
+		switch(i){
+		case Scarrier: s->ncells = 5; break;
+		case Sbattleship: s->ncells = 4; break;
+		case Scruiser: /* fallthrough */
+		case Ssubmarine: s->ncells = 3; break;
+		case Sdestroyer: s->ncells = 2; break;
+		default: sysfatal("initships: unknown ship: %d", i);
+		}
+		s->orient = OH;
+		s->hit = emalloc(s->ncells*sizeof(int));
+		memset(s->hit, 0, s->ncells*sizeof(int));
+		s->sunk = 0;
 	}
-	carrier->bbox = Rpt(
-		fromboard(&localboard, carrier->p),
-		fromboard(&localboard, addpt2(addpt2(carrier->p, mulpt2(sv, carrier->ncells)), Vec2(sv.y,sv.x)))
-	);
+	curship = s;
 }
 
+/* XXX now placeships */
 void
 placeship(Mousectl *mc, Ship *s)
 {
-	for(;;){
+	Rectangle newbbox;
+
+	while(s >= armada){
 		if(readmouse(mc) < 0)
 			break;
+
 		mc->xy = subpt(mc->xy, screen->r.min);
-		if(ptinrect(mc->xy, localboard.bbox) && mc->buttons == 1){
+		newbbox = mkshipbbox(toboard(&localboard, mc->xy), s->orient, s->ncells);
+
+		if(rectinrect(newbbox, localboard.bbox)){
 			s->p = toboard(&localboard, mc->xy);
-			send(drawchan, nil);
-			break;
+			s->bbox = newbbox;
 		}
+		if(mc->buttons == 1 && ptinrect(mc->xy, localboard.bbox))
+			s--;
+		send(drawchan, nil);
 	}
 }
 
@@ -275,7 +313,6 @@ lmb(Mousectl *mc)
 		settile(b, cell, Tship);
 		break;
 	case Playing:
-		settile(b, cell, Tmiss);
 		chanprint(egress, "shoot %d-%d", (int)cell.x, (int)cell.y);
 		break;
 	}
@@ -296,7 +333,7 @@ rmb(Mousectl *mc)
 
 	switch(menuhit(3, mc, &menu, _screen)){
 	case PLACESHIP:
-		placeship(mc, carrier);
+		placeship(mc, curship);
 		break;
 	}
 }
@@ -374,7 +411,7 @@ void
 netrecvthread(void *arg)
 {
 	Ioproc *io;
-	char buf[256];
+	char buf[256], *coords[2];
 	int n, fd;
 
 	threadsetname("netrecvthread");
@@ -386,11 +423,33 @@ netrecvthread(void *arg)
 		buf[n] = 0;
 		if(debug)
 			fprint(2, "rcvd '%s'\n", buf);
-		if(strcmp(buf, "wait") == 0)
-			game.state = Waiting1;
-		else if(strcmp(buf, "play") == 0)
-			game.state = Playing;
-//		chanprint(ingress, "%s", buf);
+		switch(game.state){
+		case Waiting0:
+			if(strcmp(buf, "layout") == 0)
+				game.state = Outlaying;
+			break;
+		case Outlaying:
+			if(strcmp(buf, "wait") == 0)
+				game.state = Waiting;
+			else if(strcmp(buf, "play") == 0)
+				game.state = Playing;
+			break;
+		case Playing:
+			if(strcmp(buf, "wait") == 0)
+				game.state = Waiting;
+			break;
+		case Waiting:
+			if(strcmp(buf, "play") == 0)
+				game.state = Playing;
+			else if(strncmp(buf, "hit", 3) == 0){
+				if(gettokens(buf+4, coords, nelem(coords), "-") == nelem(coords))
+					settile(&localboard, Pt2(strtoul(coords[0], nil, 10), strtoul(coords[1], nil, 10), 1), Thit);
+			}else if(strncmp(buf, "miss", 4) == 0){
+				if(gettokens(buf+5, coords, nelem(coords), "-") == nelem(coords))
+					settile(&localboard, Pt2(strtoul(coords[0], nil, 10), strtoul(coords[1], nil, 10), 1), Tmiss);
+			}
+			break;
+		}
 	}
 	closeioproc(io);
 	threadexitsall("connection lost");
@@ -411,6 +470,7 @@ netsendthread(void *arg)
 			break;
 		if(debug)
 			fprint(2, "sent '%s'\n", s);
+		free(s);
 	}
 	threadexitsall("connection lost");
 }
@@ -449,9 +509,6 @@ threadmain(int argc, char *argv[])
 	else if(debug)
 		fprint(2, "line established\n");
 
-	if(write(fd, "join", 4) != 4)
-		sysfatal("whoops: %r");
-
 	snprint(winspec, sizeof winspec, "-dx %d -dy %d", SCRW, SCRH);
 	if(newwindow(winspec) < 0)
 		sysfatal("newwindow: %r");
@@ -472,12 +529,12 @@ threadmain(int argc, char *argv[])
 
 	inittiles();
 	initboards();
-	initships();
+	initarmada();
 	game.state = Waiting0;
 
 	drawchan = chancreate(sizeof(void*), 0);
-	ingress = chancreate(sizeof(char*), 0);
-	egress = chancreate(sizeof(char*), 0);
+	ingress = chancreate(sizeof(char*), 16);
+	egress = chancreate(sizeof(char*), 16);
 	proccreate(showproc, nil, mainstacksize);
 	threadcreate(inputthread, &in, mainstacksize);
 	threadcreate(netrecvthread, &fd, mainstacksize);

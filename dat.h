@@ -5,6 +5,13 @@ enum {
 	Tmiss,
 	NTILES,
 
+	Scarrier = 0,
+	Sbattleship,
+	Scruiser,
+	Ssubmarine,
+	Sdestroyer,
+	NSHIPS,
+
 	OH, /* horizontal */
 	OV, /* vertical */
 
