@@ -20,7 +20,6 @@ Image *tiletab[NTILES];
 Board alienboard;
 Board localboard;
 Ship armada[NSHIPS];
-Ship *curship;
 
 struct {
 	int state;
@@ -250,7 +249,6 @@ initarmada(void)
 	Ship *s;
 	int i;
 
-	s = nil;
 	for(i = 0; i < nelem(armada); i++){
 		s = &armada[i];
 		switch(i){
@@ -266,16 +264,14 @@ initarmada(void)
 		memset(s->hit, 0, s->ncells*sizeof(int));
 		s->sunk = 0;
 	}
-	curship = s;
 }
 
-/* XXX now placeships */
 void
 placeship(Mousectl *mc, Ship *s)
 {
 	Rectangle newbbox;
 
-	while(s >= armada){
+	for(;;){
 		if(readmouse(mc) < 0)
 			break;
 
@@ -287,9 +283,18 @@ placeship(Mousectl *mc, Ship *s)
 			s->bbox = newbbox;
 		}
 		if(mc->buttons == 1 && ptinrect(mc->xy, localboard.bbox))
-			s--;
+			break;
 		send(drawchan, nil);
 	}
+}
+
+void
+placeships(Mousectl *mc)
+{
+	int i;
+
+	for(i = 0; i < nelem(armada); i++)
+		placeship(mc, &armada[i]);
 }
 
 void
@@ -333,7 +338,7 @@ rmb(Mousectl *mc)
 
 	switch(menuhit(3, mc, &menu, _screen)){
 	case PLACESHIP:
-		placeship(mc, curship);
+		placeships(mc);
 		break;
 	}
 }
