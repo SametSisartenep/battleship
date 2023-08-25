@@ -3,6 +3,7 @@
 #include <thread.h>
 #include <draw.h>
 #include <mouse.h>
+#include <cursor.h>
 #include <keyboard.h>
 #include <geometry.h>
 #include "dat.h"
@@ -20,6 +21,7 @@ Image *tiletab[NTILES];
 Board alienboard;
 Board localboard;
 Ship armada[NSHIPS];
+Ship *curship;
 
 struct {
 	int state;
@@ -197,7 +199,7 @@ inittiles(void)
 			freeimage(brush);
 			break;
 		case Tship:
-			brush = eallocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x333333FF);
+			brush = eallocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xAAAAAAFF);
 			draw(tiletab[i], tiletab[i]->r, brush, nil, ZP);
 			freeimage(brush);
 			brush = eallocimage(display, Rect(0,0,1,1), screen->chan, 1, DBlack);
@@ -257,7 +259,7 @@ initarmada(void)
 		case Scruiser: /* fallthrough */
 		case Ssubmarine: s->ncells = 3; break;
 		case Sdestroyer: s->ncells = 2; break;
-		default: sysfatal("initships: unknown ship: %d", i);
+		default: sysfatal("initarmada: unknown ship: %d", i);
 		}
 		s->orient = OH;
 		s->hit = emalloc(s->ncells*sizeof(int));
@@ -266,35 +268,38 @@ initarmada(void)
 	}
 }
 
-void
-placeship(Mousectl *mc, Ship *s)
+int
+confirmdone(Mousectl *mc)
 {
-	Rectangle newbbox;
-
-	for(;;){
-		if(readmouse(mc) < 0)
-			break;
-
-		mc->xy = subpt(mc->xy, screen->r.min);
-		newbbox = mkshipbbox(toboard(&localboard, mc->xy), s->orient, s->ncells);
-
-		if(rectinrect(newbbox, localboard.bbox)){
-			s->p = toboard(&localboard, mc->xy);
-			s->bbox = newbbox;
+	Cursor yousure = {
+		{0, 0},
+		{ 0xf7, 0xfe, 0x15, 0x54, 0x1d, 0x54, 0x09, 0x54,
+		  0x09, 0xdc, 0x00, 0x00, 0x75, 0x77, 0x45, 0x54,
+		  0x75, 0x66, 0x15, 0x54, 0x77, 0x57, 0x00, 0x00,
+		  0x00, 0x02, 0x2a, 0x84, 0x11, 0x28, 0x2a, 0x90,
+		},
+		{ 0xea, 0x2b, 0xea, 0xab, 0xe2, 0xab, 0xf6, 0xab,
+		  0xf6, 0x23, 0xff, 0xff, 0x8a, 0x88, 0xba, 0xab,
+		  0x8a, 0x99, 0xea, 0xab, 0x88, 0xa8, 0xff, 0xff,
+		  0xff, 0xfd, 0xd5, 0x7b, 0xee, 0xd7, 0xd5, 0x6f,
 		}
-		if(mc->buttons == 1 && ptinrect(mc->xy, localboard.bbox))
-			break;
-		send(drawchan, nil);
+	};
+	setcursor(mc, &yousure);
+	while(mc->buttons == 0)
+		readmouse(mc);
+	if(mc->buttons != 4){
+		setcursor(mc, nil);
+		return 0;
 	}
-}
-
-void
-placeships(Mousectl *mc)
-{
-	int i;
-
-	for(i = 0; i < nelem(armada); i++)
-		placeship(mc, &armada[i]);
+	while(mc->buttons){
+		if(mc->buttons != 4){
+			setcursor(mc, nil);
+			return 0;
+		}
+		readmouse(mc);
+	}
+	setcursor(mc, nil);
+	return 1;
 }
 
 void
@@ -315,10 +320,36 @@ lmb(Mousectl *mc)
 	cell = toboard(b, mc->xy);
 	switch(game.state){
 	case Outlaying:
-		settile(b, cell, Tship);
+		if(curship != nil && ++curship-armada >= nelem(armada))
+			curship = nil;
 		break;
 	case Playing:
-		chanprint(egress, "shoot %d-%d", (int)cell.x, (int)cell.y);
+		chanprint(egress, "shoot %s", cell2coords(cell));
+		break;
+	}
+	send(drawchan, nil);
+}
+
+void
+mmb(Mousectl *mc)
+{
+	enum {
+		ROTATE,
+	};
+	static char *items[] = {
+	 [ROTATE]	"rotate ship",
+		nil
+	};
+	static Menu menu = { .item = items };
+
+	if(game.state != Outlaying)
+		return;
+
+	mc->xy = addpt(mc->xy, screen->r.min);
+	switch(menuhit(2, mc, &menu, _screen)){
+	case ROTATE:
+		if(curship != nil)
+			curship->orient = curship->orient == OH? OV: OH;
 		break;
 	}
 	send(drawchan, nil);
@@ -329,31 +360,70 @@ rmb(Mousectl *mc)
 {
 	enum {
 		PLACESHIP,
+		DONE,
 	};
 	static char *items[] = {
-	 [PLACESHIP]	"place ship",
+	 [PLACESHIP]	"place ships",
+	 [DONE]		"done",
 		nil
 	};
 	static Menu menu = { .item = items };
+	char buf[5*(1+3+1)+1];
+	int i, n;
 
+	if(game.state != Outlaying)
+		return;
+
+	mc->xy = addpt(mc->xy, screen->r.min);
 	switch(menuhit(3, mc, &menu, _screen)){
 	case PLACESHIP:
-		placeships(mc);
+		curship = &armada[0];
+		break;
+	case DONE:
+		if(curship != nil)
+			break;
+
+		if(!confirmdone(mc))
+			break;
+
+		buf[0] = 0;
+		n = 0;
+		for(i = 0; i < nelem(armada); i++){
+			assert(sizeof buf - n > 1+3+1);
+			if(i != 0)
+				buf[n++] = ',';
+			n += snprint(buf+n, sizeof buf - n, "%s%c",
+				cell2coords(armada[i].p), armada[i].orient == OH? 'h': 'v');
+		}
+		chanprint(egress, "layout %s", buf);
 		break;
 	}
+	send(drawchan, nil);
 }
 
 void
 mouse(Mousectl *mc)
 {
+	Rectangle newbbox;
+
 	mc->xy = subpt(mc->xy, screen->r.min);
+
+	if(game.state == Outlaying && curship != nil){
+		newbbox = mkshipbbox(toboard(&localboard, mc->xy), curship->orient, curship->ncells);
+
+		if(rectinrect(newbbox, localboard.bbox)){
+			curship->p = toboard(&localboard, mc->xy);
+			curship->bbox = newbbox;
+		}
+		send(drawchan, nil);
+	}
 
 	switch(mc->buttons){
 	case 1:
 		lmb(mc);
 		break;
 	case 2:
-//		mmb(mc);
+		mmb(mc);
 		break;
 	case 4:
 		rmb(mc);
@@ -372,14 +442,11 @@ key(Rune r)
 }
 
 void
-showproc(void *)
+painter(void *)
 {
-	threadsetname("showproc");
-
 	while(recv(drawchan, nil) > 0)
 		redraw();
-
-	sysfatal("showproc died");
+	sysfatal("painter died");
 }
 
 void
@@ -426,12 +493,21 @@ netrecvthread(void *arg)
 
 	while((n = ioread(io, fd, buf, sizeof(buf)-1)) > 0){
 		buf[n] = 0;
+
 		if(debug)
 			fprint(2, "rcvd '%s'\n", buf);
+
+		if(strcmp(buf, "win") == 0)
+			game.state = Waiting0;
+		else if(strcmp(buf, "lose") == 0)
+			game.state = Waiting0;
+
 		switch(game.state){
 		case Waiting0:
-			if(strcmp(buf, "layout") == 0)
+			if(strcmp(buf, "layout") == 0){
 				game.state = Outlaying;
+				curship = &armada[0];
+			}
 			break;
 		case Outlaying:
 			if(strcmp(buf, "wait") == 0)
@@ -540,7 +616,7 @@ threadmain(int argc, char *argv[])
 	drawchan = chancreate(sizeof(void*), 0);
 	ingress = chancreate(sizeof(char*), 16);
 	egress = chancreate(sizeof(char*), 16);
-	proccreate(showproc, nil, mainstacksize);
+	threadcreate(painter, nil, mainstacksize);
 	threadcreate(inputthread, &in, mainstacksize);
 	threadcreate(netrecvthread, &fd, mainstacksize);
 	threadcreate(netsendthread, &fd, mainstacksize);

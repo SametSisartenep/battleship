@@ -8,6 +8,7 @@ TARG=\
 
 OFILES=\
 	alloc.$O\
+	util.$O\
 
 HFILES=\
 	dat.h\

@@ -115,7 +115,7 @@ serveproc(void *arg)
 	while((i = alt(a)) >= 0){
 		if(a[i].err != nil){
 			if(debug)
-				fprint(2, "alt: %s\n", a[i].err);
+				fprint(2, "[%d] alt: %s\n", getpid(), a[i].err);
 			write(m[i^1]->fd, "win", 3);
 			m[i^1]->state = Waiting0;
 			pushplayer(m[i^1]);
