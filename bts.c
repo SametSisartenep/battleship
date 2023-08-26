@@ -59,6 +59,17 @@ toboard(Board *b, Point p)
 	return np;
 }
 
+int
+rectXarmada(Rectangle r)
+{
+	int i;
+
+	for(i = 0; i < nelem(armada); i++)
+		if(curship != &armada[i] && rectXrect(r, armada[i].bbox))
+			return 1;
+	return 0;
+}
+
 Rectangle
 mkshipbbox(Point2 p, int o, int ncells)
 {
@@ -114,6 +125,9 @@ drawship(Image *dst, Ship *s)
 	Point2 p, sv;
 	int i;
 
+	if(!rectinrect(s->bbox, localboard.bbox))
+		return;
+
 	p = s->p;
 	switch(s->orient){
 	case OH: sv = Vec2(1,0); break;
@@ -147,6 +161,25 @@ drawboard(Image *dst, Board *b)
 }
 
 void
+drawinfo(Image *dst)
+{
+	Point p;
+	char *s;
+
+	s = nil;
+	switch(game.state){
+	case Waiting0: s = "looking for players"; break;
+	case Outlaying: s = "place the fleet"; break;
+	case Waiting: s = "wait for your turn"; break;
+	case Playing: s = "your turn"; break;
+	}
+	if(s == nil)
+		return;
+	p = Pt(SCRW/2 - stringwidth(font, s)/2, SCRH-Boardmargin);
+	stringbg(dst, p, display->white, ZP, font, s, display->black, ZP);
+}
+
+void
 redraw(void)
 {
 	lockdisplay(display);
@@ -155,6 +188,7 @@ redraw(void)
 	drawboard(screenb, &alienboard);
 	drawboard(screenb, &localboard);
 	drawships(screenb);
+	drawinfo(screenb);
 
 	draw(screen, screen->r, screenb, nil, ZP);
 
@@ -261,7 +295,7 @@ initarmada(void)
 		case Sdestroyer: s->ncells = 2; break;
 		default: sysfatal("initarmada: unknown ship: %d", i);
 		}
-		s->orient = OH;
+		s->orient = OV;
 		s->hit = emalloc(s->ncells*sizeof(int));
 		memset(s->hit, 0, s->ncells*sizeof(int));
 		s->sunk = 0;
@@ -386,7 +420,6 @@ rmb(Mousectl *mc)
 		if(!confirmdone(mc))
 			break;
 
-		buf[0] = 0;
 		n = 0;
 		for(i = 0; i < nelem(armada); i++){
 			assert(sizeof buf - n > 1+3+1);
@@ -411,7 +444,7 @@ mouse(Mousectl *mc)
 	if(game.state == Outlaying && curship != nil){
 		newbbox = mkshipbbox(toboard(&localboard, mc->xy), curship->orient, curship->ncells);
 
-		if(rectinrect(newbbox, localboard.bbox)){
+		if(rectinrect(newbbox, localboard.bbox) && !rectXarmada(newbbox)){
 			curship->p = toboard(&localboard, mc->xy);
 			curship->bbox = newbbox;
 		}
@@ -442,7 +475,7 @@ key(Rune r)
 }
 
 void
-painter(void *)
+bobross(void *)
 {
 	while(recv(drawchan, nil) > 0)
 		redraw();
@@ -485,8 +518,6 @@ netrecvthread(void *arg)
 	Ioproc *io;
 	char buf[256], *coords[2];
 	int n, fd;
-
-	threadsetname("netrecvthread");
 
 	fd = *(int*)arg;
 	io = ioproc();
@@ -541,8 +572,6 @@ netsendthread(void *arg)
 {
 	char *s;
 	int fd;
-
-	threadsetname("netsendthread");
 
 	fd = *(int*)arg;
 
@@ -616,7 +645,7 @@ threadmain(int argc, char *argv[])
 	drawchan = chancreate(sizeof(void*), 0);
 	ingress = chancreate(sizeof(char*), 16);
 	egress = chancreate(sizeof(char*), 16);
-	threadcreate(painter, nil, mainstacksize);
+	threadcreate(bobross, nil, mainstacksize);
 	threadcreate(inputthread, &in, mainstacksize);
 	threadcreate(netrecvthread, &fd, mainstacksize);
 	threadcreate(netsendthread, &fd, mainstacksize);
