@@ -55,15 +55,26 @@ netrecvthread(void *arg)
 {
 	Chanpipe *cp;
 	Ioproc *io;
-	char buf[256];
-	int n;
+	char buf[256], *s, *e;
+	int n, tot;
 
 	cp = arg;
 	io = ioproc();
 
-	while((n = ioread(io, cp->fd, buf, sizeof(buf)-1)) > 0){
-		buf[n] = 0;
-		chanprint(cp->c, "%s", buf);
+	tot = 0;
+	while((n = ioread(io, cp->fd, buf+tot, sizeof(buf)-1-tot)) > 0){
+		tot += n;
+		buf[tot] = 0;
+		s = buf;
+		while((e = strchr(s, '\n')) != nil){
+			*e++ = 0;
+			chanprint(cp->c, "%s", s);
+			tot -= e-s;
+			memmove(buf, e, tot);
+			s = e;
+		}
+		if(tot >= sizeof(buf)-1)
+			tot = 0;
 	}
 	if(debug)
 		fprint(2, "[%d] lost connection\n", getpid());
@@ -76,17 +87,23 @@ void
 serveproc(void *arg)
 {
 	NetConnInfo *nci[2];
-	Player **m;
+	Match *m;
+	Player *p, *op;
 	Chanpipe cp[2];
 	Alt a[3];
-	int i, n0, tid[2];
+	int i;
+	uint n0;
 	char *s;
+
+	Point2 cell;
+	char *coords[5];
+	int j, orient;
 
 	m = arg;
 	s = nil;
 
-	nci[0] = getnetconninfo(nil, m[0]->fd);
-	nci[1] = getnetconninfo(nil, m[1]->fd);
+	nci[0] = getnetconninfo(nil, m->pl[0]->fd);
+	nci[1] = getnetconninfo(nil, m->pl[1]->fd);
 	if(nci[0] == nil || nci[1] == nil)
 		sysfatal("getnetconninfo: %r");
 	threadsetname("serveproc %s ↔ %s", nci[0]->raddr, nci[1]->raddr);
@@ -94,42 +111,81 @@ serveproc(void *arg)
 	freenetconninfo(nci[1]);
 
 	cp[0].c = chancreate(sizeof(char*), 1);
-	cp[0].fd = m[0]->fd;
+	cp[0].fd = m->pl[0]->fd;
 	cp[1].c = chancreate(sizeof(char*), 1);
-	cp[1].fd = m[1]->fd;
+	cp[1].fd = m->pl[1]->fd;
 
 	a[0].c = cp[0].c; a[0].v = &s; a[0].op = CHANRCV;
 	a[1].c = cp[1].c; a[1].v = &s; a[1].op = CHANRCV;
 	a[2].op = CHANEND;
 
 	threadsetgrp(truerand());
-	tid[0] = threadcreate(netrecvthread, &cp[0], mainstacksize);
-	tid[1] = threadcreate(netrecvthread, &cp[1], mainstacksize);
+	threadcreate(netrecvthread, &cp[0], mainstacksize);
+	threadcreate(netrecvthread, &cp[1], mainstacksize);
 
-	assert(m[0]->state == Waiting0 && m[1]->state == Waiting0);
-	write(m[0]->fd, "layout", 6);
-	write(m[1]->fd, "layout", 6);
-	m[0]->state = Outlaying;
-	m[1]->state = Outlaying;
+	write(m->pl[0]->fd, "layout\n", 7);
+	write(m->pl[1]->fd, "layout\n", 7);
+	m->pl[0]->state = Outlaying;
+	m->pl[1]->state = Outlaying;
 
 	while((i = alt(a)) >= 0){
+		p = m->pl[i];
+		op = m->pl[i^1];
+
 		if(a[i].err != nil){
 			if(debug)
 				fprint(2, "[%d] alt: %s\n", getpid(), a[i].err);
-			write(m[i^1]->fd, "win", 3);
-			m[i^1]->state = Waiting0;
-			pushplayer(m[i^1]);
-			freeplayer(m[i]);
+			write(op->fd, "win\n", 4);
+			pushplayer(op);
+			freeplayer(p);
 			break;
 		}
 		if(debug)
 			fprint(2, "[%d] said '%s'\n", i, s);
-		if(write(m[i^1]->fd, s, strlen(s)) != strlen(s)){
-			write(m[i]->fd, "win", 3);
-			m[i]->state = Waiting0;
-			pushplayer(m[i]);
-			freeplayer(m[i^1]);
-			free(s);
+
+		switch(p->state){
+		case Outlaying:
+			if(strncmp(s, "layout", 6) == 0)
+				if(gettokens(s+7, coords, nelem(coords), ",") == nelem(coords)){
+					if(debug)
+						fprint(2, "rcvd layout from %d\n", i);
+					for(j = 0; j < nelem(coords); j++){
+						cell = coords2cell(coords[j]);
+						orient = coords[j][strlen(coords[j])-2] == 'h'? OH: OV;
+						settiles(p, cell, orient, shiplen(j), Tship);
+					}
+					p->state = Waiting;
+					if(debug)
+						fprint(2, "curstates [%d] %d / [%d] %d\n", i, p->state, i^1, op->state);
+					if(op->state == Waiting){
+						n0 = truerand();
+						if(debug)
+							fprint(2, "let the game begin: %d plays, %d waits\n", n0%2, (n0+1)%2);
+						write(m->pl[n0%2]->fd, "play\n", 5);
+						m->pl[n0%2]->state = Playing;
+						write(m->pl[(n0+1)%2]->fd, "wait\n", 5);
+					}
+				}
+			break;
+		case Playing:
+			if(strncmp(s, "shoot", 5) == 0){
+				cell = coords2cell(s+6);
+				if(gettile(op, cell) == Tship){
+					settile(op, cell, Thit);
+					write(p->fd, "hit\n", 4);
+					fprint(op->fd, "hit %s\n", cell2coords(cell));
+				}else{
+					settile(op, cell, Tmiss);
+					write(p->fd, "miss\n", 5);
+					fprint(op->fd, "miss %s\n", cell2coords(cell));
+				}
+				write(p->fd, "wait\n", 5);
+				write(op->fd, "play\n", 5);
+				p->state = Waiting;
+				op->state = Playing;
+				if(debug)
+					fprint(2, "%d waits, %d plays\n", i, i^1);
+			}
 			break;
 		}
 		free(s);
@@ -175,7 +231,7 @@ reaper(void *)
 void
 matchmaker(void *)
 {
-	Player **match;
+	Match *m;
 
 	threadsetname("matchmaker");
 
@@ -185,11 +241,15 @@ matchmaker(void *)
 			continue;
 		}
 
-		match = emalloc(2*sizeof(Player*));
-		match[0] = popplayer();
-		match[1] = popplayer();
+		m = emalloc(sizeof *m);
+		m->pl[0] = popplayer();
+		m->pl[1] = popplayer();
+		m->pl[0]->state = Waiting0;
+		m->pl[1]->state = Waiting0;
+		memset(m->pl[0]->map, Twater, MAPW*MAPH);
+		memset(m->pl[1]->map, Twater, MAPW*MAPH);
 
-		proccreate(serveproc, match, mainstacksize);
+		proccreate(serveproc, m, mainstacksize);
 	}
 }
 
@@ -243,6 +303,7 @@ threadmain(int argc, char *argv[])
 {
 	char *addr;
 
+	GEOMfmtinstall();
 	addr = "tcp!*!3047";
 	ARGBEGIN{
 	case 'd':

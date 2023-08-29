@@ -22,6 +22,7 @@ Board alienboard;
 Board localboard;
 Ship armada[NSHIPS];
 Ship *curship;
+Point2 lastshot;
 
 struct {
 	int state;
@@ -93,16 +94,6 @@ gettileimage(int type)
 	if(type < 0 || type > nelem(tiletab))
 		return nil;
 	return tiletab[type];
-}
-
-void
-settile(Board *b, Point2 cell, int type)
-{
-	Point p;
-
-	p.x = cell.x;
-	p.y = cell.y;
-	b->map[p.x][p.y] = type;
 }
 
 void
@@ -287,14 +278,7 @@ initarmada(void)
 
 	for(i = 0; i < nelem(armada); i++){
 		s = &armada[i];
-		switch(i){
-		case Scarrier: s->ncells = 5; break;
-		case Sbattleship: s->ncells = 4; break;
-		case Scruiser: /* fallthrough */
-		case Ssubmarine: s->ncells = 3; break;
-		case Sdestroyer: s->ncells = 2; break;
-		default: sysfatal("initarmada: unknown ship: %d", i);
-		}
+		s->ncells = shiplen(i);
 		s->orient = OV;
 		s->hit = emalloc(s->ncells*sizeof(int));
 		memset(s->hit, 0, s->ncells*sizeof(int));
@@ -354,11 +338,15 @@ lmb(Mousectl *mc)
 	cell = toboard(b, mc->xy);
 	switch(game.state){
 	case Outlaying:
-		if(curship != nil && ++curship-armada >= nelem(armada))
-			curship = nil;
+		if(b == &localboard)
+			if(curship != nil && ++curship-armada >= nelem(armada))
+				curship = nil;
 		break;
 	case Playing:
-		chanprint(egress, "shoot %s", cell2coords(cell));
+		if(b == &alienboard){
+			chanprint(egress, "shoot %s\n", cell2coords(cell));
+			lastshot = cell;
+		}
 		break;
 	}
 	send(drawchan, nil);
@@ -382,8 +370,24 @@ mmb(Mousectl *mc)
 	mc->xy = addpt(mc->xy, screen->r.min);
 	switch(menuhit(2, mc, &menu, _screen)){
 	case ROTATE:
-		if(curship != nil)
+		if(curship != nil){
 			curship->orient = curship->orient == OH? OV: OH;
+			curship->bbox = mkshipbbox(curship->p, curship->orient, curship->ncells);
+
+			/* steer it, captain! don't let it go off-board! */
+			if(!rectinrect(curship->bbox, localboard.bbox))
+				switch(curship->orient){
+				case OH:
+					curship->bbox.min.x -= curship->bbox.max.x-localboard.bbox.max.x;
+					curship->bbox.max.x = localboard.bbox.max.x;
+					break;
+				case OV:
+					curship->bbox.min.y -= curship->bbox.max.y-localboard.bbox.max.y;
+					curship->bbox.max.y = localboard.bbox.max.y;
+					break;
+				}
+				curship->p = toboard(&localboard, curship->bbox.min);
+		}
 		break;
 	}
 	send(drawchan, nil);
@@ -428,7 +432,7 @@ rmb(Mousectl *mc)
 			n += snprint(buf+n, sizeof buf - n, "%s%c",
 				cell2coords(armada[i].p), armada[i].orient == OH? 'h': 'v');
 		}
-		chanprint(egress, "layout %s", buf);
+		chanprint(egress, "layout %s\n", buf);
 		break;
 	}
 	send(drawchan, nil);
@@ -513,55 +517,81 @@ inputthread(void *arg)
 }
 
 void
+processcmd(char *cmd)
+{
+	char *coords[2];
+
+	if(debug)
+		fprint(2, "rcvd '%s'\n", cmd);
+
+	if(strcmp(cmd, "win") == 0){
+//		celebrate();
+		game.state = Waiting0;
+	}else if(strcmp(cmd, "lose") == 0){
+//		keelhaul();
+		game.state = Waiting0;
+	}
+
+	switch(game.state){
+	case Waiting0:
+		if(strcmp(cmd, "layout") == 0){
+			game.state = Outlaying;
+			curship = &armada[0];
+		}
+		break;
+	case Outlaying:
+		if(strcmp(cmd, "wait") == 0)
+			game.state = Waiting;
+		else if(strcmp(cmd, "play") == 0)
+			game.state = Playing;
+		break;
+	case Playing:
+		if(strcmp(cmd, "wait") == 0)
+			game.state = Waiting;
+		else if(strcmp(cmd, "hit") == 0)
+			settile(&alienboard, lastshot, Thit);
+		else if(strcmp(cmd, "miss") == 0)
+			settile(&alienboard, lastshot, Tmiss);
+		break;
+	case Waiting:
+		if(strcmp(cmd, "play") == 0)
+			game.state = Playing;
+		else if(strncmp(cmd, "hit", 3) == 0){
+			if(gettokens(cmd+4, coords, nelem(coords), "-") == nelem(coords))
+				settile(&localboard, Pt2(strtoul(coords[0], nil, 10), strtoul(coords[1], nil, 10), 1), Thit);
+		}else if(strncmp(cmd, "miss", 4) == 0){
+			if(gettokens(cmd+5, coords, nelem(coords), "-") == nelem(coords))
+				settile(&localboard, Pt2(strtoul(coords[0], nil, 10), strtoul(coords[1], nil, 10), 1), Tmiss);
+		}
+		break;
+	}
+	send(drawchan, nil);
+}
+
+void
 netrecvthread(void *arg)
 {
 	Ioproc *io;
-	char buf[256], *coords[2];
-	int n, fd;
+	char buf[256], *s, *e;
+	int n, tot, fd;
 
 	fd = *(int*)arg;
 	io = ioproc();
 
-	while((n = ioread(io, fd, buf, sizeof(buf)-1)) > 0){
-		buf[n] = 0;
-
-		if(debug)
-			fprint(2, "rcvd '%s'\n", buf);
-
-		if(strcmp(buf, "win") == 0)
-			game.state = Waiting0;
-		else if(strcmp(buf, "lose") == 0)
-			game.state = Waiting0;
-
-		switch(game.state){
-		case Waiting0:
-			if(strcmp(buf, "layout") == 0){
-				game.state = Outlaying;
-				curship = &armada[0];
-			}
-			break;
-		case Outlaying:
-			if(strcmp(buf, "wait") == 0)
-				game.state = Waiting;
-			else if(strcmp(buf, "play") == 0)
-				game.state = Playing;
-			break;
-		case Playing:
-			if(strcmp(buf, "wait") == 0)
-				game.state = Waiting;
-			break;
-		case Waiting:
-			if(strcmp(buf, "play") == 0)
-				game.state = Playing;
-			else if(strncmp(buf, "hit", 3) == 0){
-				if(gettokens(buf+4, coords, nelem(coords), "-") == nelem(coords))
-					settile(&localboard, Pt2(strtoul(coords[0], nil, 10), strtoul(coords[1], nil, 10), 1), Thit);
-			}else if(strncmp(buf, "miss", 4) == 0){
-				if(gettokens(buf+5, coords, nelem(coords), "-") == nelem(coords))
-					settile(&localboard, Pt2(strtoul(coords[0], nil, 10), strtoul(coords[1], nil, 10), 1), Tmiss);
-			}
-			break;
+	tot = 0;
+	while((n = ioread(io, fd, buf+tot, sizeof(buf)-1-tot)) > 0){
+		tot += n;
+		buf[tot] = 0;
+		s = buf;
+		while((e = strchr(s, '\n')) != nil){
+			*e++ = 0;
+			processcmd(s);
+			tot -= e-s;
+			memmove(buf, e, tot);
+			s = e;
 		}
+		if(tot >= sizeof(buf)-1)
+			tot = 0;
 	}
 	closeioproc(io);
 	threadexitsall("connection lost");
@@ -643,8 +673,8 @@ threadmain(int argc, char *argv[])
 	game.state = Waiting0;
 
 	drawchan = chancreate(sizeof(void*), 0);
-	ingress = chancreate(sizeof(char*), 16);
-	egress = chancreate(sizeof(char*), 16);
+	ingress = chancreate(sizeof(char*), 1);
+	egress = chancreate(sizeof(char*), 1);
 	threadcreate(bobross, nil, mainstacksize);
 	threadcreate(inputthread, &in, mainstacksize);
 	threadcreate(netrecvthread, &fd, mainstacksize);

@@ -33,9 +33,11 @@ enum {
 
 typedef struct Input Input;
 typedef struct Ship Ship;
+typedef struct Map Map;
 typedef struct Board Board;
 typedef struct Player Player;
 typedef struct Playerq Playerq;
+typedef struct Match Match;
 typedef struct Chanpipe Chanpipe;
 
 struct Input
@@ -54,15 +56,21 @@ struct Ship
 	int sunk;
 };
 
+struct Map
+{
+	char map[MAPW][MAPH];
+};
+
 struct Board
 {
 	RFrame;
-	char map[17][17];
+	Map;
 	Rectangle bbox;
 };
 
 struct Player
 {
+	Map;
 	int fd;
 	int sfd;
 	int state;
@@ -74,6 +82,11 @@ struct Playerq
 	Player **players;
 	ulong cap;
 	ulong nplayers;
+};
+
+struct Match
+{
+	Player *pl[2];
 };
 
 struct Chanpipe
