@@ -28,6 +28,11 @@ struct {
 	int state;
 } game;
 
+struct {
+	Image *c; /* color */
+	char *s; /* banner text */
+} conclusion;
+
 
 Point
 fromworld(Point2 p)
@@ -167,7 +172,7 @@ drawinfo(Image *dst)
 	if(s == nil)
 		return;
 	p = Pt(SCRW/2 - stringwidth(font, s)/2, SCRH-Boardmargin);
-	stringbg(dst, p, display->white, ZP, font, s, display->black, ZP);
+	string(dst, p, display->white, ZP, font, s);
 }
 
 void
@@ -181,22 +186,40 @@ redraw(void)
 	drawships(screenb);
 	drawinfo(screenb);
 
+	if(conclusion.s != nil)
+		string(screenb, Pt(SCRW/2 - stringwidth(font, conclusion.s)/2, 0), conclusion.c, ZP, font, conclusion.s);
+
 	draw(screen, screen->r, screenb, nil, ZP);
 
 	flushimage(display, 1);
 	unlockdisplay(display);
+
+	if(conclusion.s != nil){
+		sleep(5000);
+		conclusion.s = nil;
+		redraw();
+	}
 }
 
 void
 resize(void)
 {
+	int fd;
+
 	lockdisplay(display);
 	if(getwindow(display, Refnone) < 0)
 		sysfatal("resize failed");
 	unlockdisplay(display);
 
-	freeimage(screenb);
-	screenb = eallocimage(display, rectsubpt(screen->r, screen->r.min), screen->chan, 0, DNofill);
+	/* ignore move events */
+	if(Dx(screen->r) != SCRW || Dy(screen->r) != SCRH){
+		fd = open("/dev/wctl", OWRITE);
+		if(fd >= 0){
+			fprint(fd, "resize %s", winspec);
+			close(fd);
+		}
+	}
+
 	send(drawchan, nil);
 }
 
@@ -354,7 +377,7 @@ lmb(Mousectl *mc)
 	switch(game.state){
 	case Outlaying:
 		if(b == &localboard)
-			if(curship != nil)
+			if(curship != nil && rectinrect(curship->bbox, localboard.bbox))
 				if(++curship-armada >= nelem(armada))
 					curship = nil;
 				else if(curship != &armada[0])
@@ -405,7 +428,9 @@ mmb(Mousectl *mc)
 					break;
 				}
 				curship->p = toboard(&localboard, curship->bbox.min);
-			/* TODO check for collision with other ships */
+
+			if(rectXarmada(curship->bbox))
+				curship->bbox = ZR;
 		}
 		break;
 	}
@@ -536,6 +561,30 @@ inputthread(void *arg)
 }
 
 void
+celebrate(void)
+{
+	static Image *c;
+	static char s[] = "YOU WON!";
+
+	if(c == nil)
+		c = eallocimage(display, Rect(0,0,1,1), screen->chan, 1, DGreen);
+	conclusion.c = c;
+	conclusion.s = s;
+}
+
+void
+keelhaul(void)
+{
+	static Image *c;
+	static char s[] = "…YOU LOST";
+
+	if(c == nil)
+		c = eallocimage(display, Rect(0,0,1,1), screen->chan, 1, DRed);
+	conclusion.c = c;
+	conclusion.s = s;
+}
+
+void
 processcmd(char *cmd)
 {
 	Point2 cell;
@@ -545,11 +594,11 @@ processcmd(char *cmd)
 		fprint(2, "rcvd '%s'\n", cmd);
 
 	if(strcmp(cmd, "win") == 0){
-//		celebrate();
+		celebrate();
 		resetgame();
 		game.state = Waiting0;
 	}else if(strcmp(cmd, "lose") == 0){
-//		keelhaul();
+		keelhaul();
 		resetgame();
 		game.state = Waiting0;
 	}

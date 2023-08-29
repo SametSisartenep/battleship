@@ -179,6 +179,13 @@ serveproc(void *arg)
 					settile(op, cell, Thit);
 					write(p->fd, "hit\n", 4);
 					fprint(op->fd, "hit %s\n", cell2coords(cell));
+					if(countshipcells(op) < 1){
+						write(p->fd, "win\n", 4);
+						write(op->fd, "lose\n", 5);
+						pushplayer(p);
+						pushplayer(op);
+						goto Finish;
+					}
 					goto Swapturn;
 				case Twater:
 					settile(op, cell, Tmiss);
@@ -192,12 +199,13 @@ Swapturn:
 					break;
 				}
 				if(debug)
-					fprint(2, "%d waits, %d plays\n", i, i^1);
+					fprint(2, "%d plays, %d waits\n", i^1, i);
 			}
 			break;
 		}
 		free(s);
 	}
+Finish:
 	if(debug)
 		fprint(2, "[%d] serveproc ending\n", getpid());
 	free(m);

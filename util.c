@@ -94,6 +94,19 @@ fprintmap(int fd, Map *m)
 }
 
 int
+countshipcells(Map *m)
+{
+	int i, j, n;
+
+	n = 0;
+	for(i = 0; i < MAPW; i++)
+		for(j = 0; j < MAPH; j++)
+			if(gettile(m, Pt2(i,j,1)) == Tship)
+				n++;
+	return n;
+}
+
+int
 shiplen(int stype)
 {
 	assert(stype >= 0 && stype < NSHIPS);
