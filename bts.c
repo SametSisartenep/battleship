@@ -572,7 +572,7 @@ void
 netrecvthread(void *arg)
 {
 	Ioproc *io;
-	char buf[256], *s, *e;
+	char buf[256], *e;
 	int n, tot, fd;
 
 	fd = *(int*)arg;
@@ -582,13 +582,11 @@ netrecvthread(void *arg)
 	while((n = ioread(io, fd, buf+tot, sizeof(buf)-1-tot)) > 0){
 		tot += n;
 		buf[tot] = 0;
-		s = buf;
-		while((e = strchr(s, '\n')) != nil){
+		while((e = strchr(buf, '\n')) != nil){
 			*e++ = 0;
-			processcmd(s);
-			tot -= e-s;
+			processcmd(buf);
+			tot -= e-buf;
 			memmove(buf, e, tot);
-			s = e;
 		}
 		if(tot >= sizeof(buf)-1)
 			tot = 0;
