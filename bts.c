@@ -286,6 +286,21 @@ initarmada(void)
 	}
 }
 
+void
+resetgame(void)
+{
+	int i;
+
+	memset(localboard.map, Twater, MAPW*MAPH);
+	memset(alienboard.map, Twater, MAPW*MAPH);
+	for(i = 0; i < nelem(armada); i++){
+		armada[i].bbox = ZR;
+		memset(armada[i].hit, 0, armada[i].ncells*sizeof(int));
+		armada[i].sunk = 0;
+	}
+	curship = nil;
+}
+
 int
 confirmdone(Mousectl *mc)
 {
@@ -339,8 +354,11 @@ lmb(Mousectl *mc)
 	switch(game.state){
 	case Outlaying:
 		if(b == &localboard)
-			if(curship != nil && ++curship-armada >= nelem(armada))
-				curship = nil;
+			if(curship != nil)
+				if(++curship-armada >= nelem(armada))
+					curship = nil;
+				else if(curship != &armada[0])
+					curship->orient = (curship-1)->orient;
 		break;
 	case Playing:
 		if(b == &alienboard){
@@ -387,6 +405,7 @@ mmb(Mousectl *mc)
 					break;
 				}
 				curship->p = toboard(&localboard, curship->bbox.min);
+			/* TODO check for collision with other ships */
 		}
 		break;
 	}
@@ -519,16 +538,19 @@ inputthread(void *arg)
 void
 processcmd(char *cmd)
 {
-	char *coords[2];
+	Point2 cell;
+	int i;
 
 	if(debug)
 		fprint(2, "rcvd '%s'\n", cmd);
 
 	if(strcmp(cmd, "win") == 0){
 //		celebrate();
+		resetgame();
 		game.state = Waiting0;
 	}else if(strcmp(cmd, "lose") == 0){
 //		keelhaul();
+		resetgame();
 		game.state = Waiting0;
 	}
 
@@ -557,11 +579,16 @@ processcmd(char *cmd)
 		if(strcmp(cmd, "play") == 0)
 			game.state = Playing;
 		else if(strncmp(cmd, "hit", 3) == 0){
-			if(gettokens(cmd+4, coords, nelem(coords), "-") == nelem(coords))
-				settile(&localboard, Pt2(strtoul(coords[0], nil, 10), strtoul(coords[1], nil, 10), 1), Thit);
+			cell = coords2cell(cmd+4);
+			for(i = 0; i < nelem(armada); i++)
+				if(ptinrect(fromboard(&localboard, cell), armada[i].bbox)){
+					cell = subpt2(cell, armada[i].p);
+					armada[i].hit[(int)vec2len(cell)] = 1;
+					break;
+				}
 		}else if(strncmp(cmd, "miss", 4) == 0){
-			if(gettokens(cmd+5, coords, nelem(coords), "-") == nelem(coords))
-				settile(&localboard, Pt2(strtoul(coords[0], nil, 10), strtoul(coords[1], nil, 10), 1), Tmiss);
+			cell = coords2cell(cmd+5);
+			settile(&localboard, cell, Tmiss);
 		}
 		break;
 	}

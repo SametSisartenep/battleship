@@ -149,13 +149,19 @@ serveproc(void *arg)
 						fprint(2, "rcvd layout from %d\n", i);
 					for(j = 0; j < nelem(coords); j++){
 						cell = coords2cell(coords[j]);
-						orient = coords[j][strlen(coords[j])-2] == 'h'? OH: OV;
+						orient = coords[j][strlen(coords[j])-1] == 'h'? OH: OV;
 						settiles(p, cell, orient, shiplen(j), Tship);
 					}
 					p->state = Waiting;
 					if(debug)
 						fprint(2, "curstates [%d] %d / [%d] %d\n", i, p->state, i^1, op->state);
 					if(op->state == Waiting){
+						if(debug){
+							fprint(2, "map0:\n");
+							fprintmap(2, p);
+							fprint(2, "map1:\n");
+							fprintmap(2, op);
+						}
 						n0 = truerand();
 						if(debug)
 							fprint(2, "let the game begin: %d plays, %d waits\n", n0%2, (n0+1)%2);
@@ -168,19 +174,23 @@ serveproc(void *arg)
 		case Playing:
 			if(strncmp(s, "shoot", 5) == 0){
 				cell = coords2cell(s+6);
-				if(gettile(op, cell) == Tship){
+				switch(gettile(op, cell)){
+				case Tship:
 					settile(op, cell, Thit);
 					write(p->fd, "hit\n", 4);
 					fprint(op->fd, "hit %s\n", cell2coords(cell));
-				}else{
+					goto Swapturn;
+				case Twater:
 					settile(op, cell, Tmiss);
 					write(p->fd, "miss\n", 5);
 					fprint(op->fd, "miss %s\n", cell2coords(cell));
+Swapturn:
+					write(p->fd, "wait\n", 5);
+					write(op->fd, "play\n", 5);
+					p->state = Waiting;
+					op->state = Playing;
+					break;
 				}
-				write(p->fd, "wait\n", 5);
-				write(op->fd, "play\n", 5);
-				p->state = Waiting;
-				op->state = Playing;
 				if(debug)
 					fprint(2, "%d waits, %d plays\n", i, i^1);
 			}

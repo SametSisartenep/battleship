@@ -77,6 +77,22 @@ settiles(Map *m, Point2 cell, int o, int ncells, int type)
 	}
 }
 
+void
+fprintmap(int fd, Map *m)
+{
+	int i, j;
+
+	for(i = 0; i < MAPH; i++){
+		fprint(fd, "\t");
+		for(j = 0; j < MAPW; j++)
+			switch(m->map[j][i]){
+			case Twater: fprint(fd, "W"); break;
+			case Tship: fprint(fd, "S"); break;
+			}
+		fprint(fd, "\n");
+	}
+}
+
 int
 shiplen(int stype)
 {

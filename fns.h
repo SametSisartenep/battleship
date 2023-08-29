@@ -15,4 +15,5 @@ Point2 coords2cell(char*);
 int gettile(Map*, Point2);
 void settile(Map*, Point2, int);
 void settiles(Map*, Point2, int, int, int);
+void fprintmap(int, Map*);
 int shiplen(int);
