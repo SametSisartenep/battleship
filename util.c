@@ -16,6 +16,13 @@ static int shiplentab[] = {
  [Ssubmarine]	3,
  [Sdestroyer]	2,
 };
+static char *shipnametab[] = {
+ [Scarrier]	"carrier",
+ [Sbattleship]	"battleship",
+ [Scruiser]	"cruiser",
+ [Ssubmarine]	"submarine",
+ [Sdestroyer]	"destroyer",
+};
 
 
 char *
@@ -109,6 +116,15 @@ countshipcells(Map *m)
 int
 shiplen(int stype)
 {
-	assert(stype >= 0 && stype < NSHIPS);
+	if(stype < 0 || stype >= NSHIPS)
+		return -1;
 	return shiplentab[stype];
+}
+
+char *
+shipname(int stype)
+{
+	if(stype < 0 || stype >= NSHIPS)
+		return nil;
+	return shipnametab[stype];
 }

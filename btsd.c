@@ -252,6 +252,10 @@ matchmaker(void *)
 	threadsetname("matchmaker");
 
 	for(;;){
+		/*
+		 * TODO make fairer matches
+		 * locking playerq while checking nplayers and popping the couple.
+		 */
 		if(playerq.nplayers < 2){
 			sleep(100);
 			continue;

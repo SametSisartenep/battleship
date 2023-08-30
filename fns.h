@@ -18,3 +18,4 @@ void settiles(Map*, Point2, int, int, int);
 void fprintmap(int, Map*);
 int countshipcells(Map*);
 int shiplen(int);
+char *shipname(int);

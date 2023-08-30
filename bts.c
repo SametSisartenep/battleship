@@ -80,6 +80,7 @@ Point2 lastshot;
 
 struct {
 	int state;
+	int layoutdone;
 } game;
 
 struct {
@@ -158,6 +159,23 @@ csetcursor(Mousectl *mc, Cursor *c)
 	oc = c;
 }
 
+void
+resetgame(void)
+{
+	int i;
+
+	memset(localboard.map, Twater, MAPW*MAPH);
+	memset(alienboard.map, Twater, MAPW*MAPH);
+	for(i = 0; i < nelem(armada); i++){
+		armada[i].bbox = ZR;
+		memset(armada[i].hit, 0, armada[i].ncells*sizeof(int));
+		armada[i].sunk = 0;
+	}
+	curship = nil;
+	game.state = Waiting0;
+	game.layoutdone = 0;
+}
+
 Image *
 gettileimage(int type)
 {
@@ -224,8 +242,9 @@ drawboard(Image *dst, Board *b)
 void
 drawinfo(Image *dst)
 {
+	static Image *c;
 	Point p;
-	char *s;
+	char *s, aux[32];
 
 	s = nil;
 	switch(game.state){
@@ -236,8 +255,22 @@ drawinfo(Image *dst)
 	}
 	if(s == nil)
 		return;
-	p = Pt(SCRW/2 - stringwidth(font, s)/2, SCRH-Boardmargin);
+	p = Pt(SCRW/2 - stringwidth(font, s)/2, 0);
 	string(dst, p, display->white, ZP, font, s);
+
+	if(game.state == Outlaying){
+		if(c == nil)
+			c = eallocimage(display, Rect(0,0,1,1), screen->chan, 1, DYellow);
+		if(curship != nil){
+			snprint(aux, sizeof aux, "%s (%d)", shipname(curship-armada), curship->ncells);
+			p = Pt(SCRW/2 - stringwidth(font, aux)/2, SCRH-Boardmargin);
+			string(dst, p, c, ZP, font, aux);
+		}else{
+			s = "done with the layout?";
+			p = Pt(SCRW/2 - stringwidth(font, s)/2, SCRH-Boardmargin);
+			string(dst, p, c, ZP, font, s);
+		}
+	}
 }
 
 void
@@ -252,7 +285,7 @@ redraw(void)
 	drawinfo(screenb);
 
 	if(conclusion.s != nil)
-		string(screenb, Pt(SCRW/2 - stringwidth(font, conclusion.s)/2, 0), conclusion.c, ZP, font, conclusion.s);
+		string(screenb, Pt(SCRW/2 - stringwidth(font, conclusion.s)/2, font->height+5), conclusion.c, ZP, font, conclusion.s);
 
 	draw(screen, screen->r, screenb, nil, ZP);
 
@@ -260,8 +293,9 @@ redraw(void)
 	unlockdisplay(display);
 
 	if(conclusion.s != nil){
-		sleep(5000);
+		resetgame();
 		conclusion.s = nil;
+		sleep(5000);
 		redraw();
 	}
 }
@@ -372,21 +406,6 @@ initarmada(void)
 		memset(s->hit, 0, s->ncells*sizeof(int));
 		s->sunk = 0;
 	}
-}
-
-void
-resetgame(void)
-{
-	int i;
-
-	memset(localboard.map, Twater, MAPW*MAPH);
-	memset(alienboard.map, Twater, MAPW*MAPH);
-	for(i = 0; i < nelem(armada); i++){
-		armada[i].bbox = ZR;
-		memset(armada[i].hit, 0, armada[i].ncells*sizeof(int));
-		armada[i].sunk = 0;
-	}
-	curship = nil;
 }
 
 int
@@ -527,10 +546,11 @@ rmb(Mousectl *mc)
 	mc->xy = addpt(mc->xy, screen->r.min);
 	switch(menuhit(3, mc, &menu, _screen)){
 	case PLACESHIP:
-		curship = &armada[0];
+		if(!game.layoutdone)
+			curship = &armada[0];
 		break;
 	case DONE:
-		if(curship != nil)
+		if(curship != nil || game.layoutdone)
 			break;
 
 		if(!confirmdone(mc))
@@ -545,6 +565,7 @@ rmb(Mousectl *mc)
 				cell2coords(armada[i].p), armada[i].orient == OH? 'h': 'v');
 		}
 		chanprint(egress, "layout %s\n", buf);
+		game.layoutdone++;
 		break;
 	}
 	send(drawchan, nil);
@@ -672,15 +693,10 @@ processcmd(char *cmd)
 	if(debug)
 		fprint(2, "rcvd '%s'\n", cmd);
 
-	if(strcmp(cmd, "win") == 0){
+	if(strcmp(cmd, "win") == 0)
 		celebrate();
-		resetgame();
-		game.state = Waiting0;
-	}else if(strcmp(cmd, "lose") == 0){
+	else if(strcmp(cmd, "lose") == 0)
 		keelhaul();
-		resetgame();
-		game.state = Waiting0;
-	}
 
 	switch(game.state){
 	case Waiting0:
