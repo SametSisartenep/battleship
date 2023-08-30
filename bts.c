@@ -11,10 +11,39 @@
 
 int debug;
 
+Cursor waitcursor = {
+	{0, 0},
+	{ 0x01, 0x80, 0x03, 0xc0, 0x07, 0xe0, 0x07, 0xe0,
+	  0x07, 0xe0, 0x07, 0xe0, 0x03, 0xc0, 0x0f, 0xf0,
+	  0x1f, 0xf8, 0x1f, 0xf8, 0x1f, 0xf8, 0x1f, 0xf8,
+	  0x0f, 0xf0, 0x1f, 0xf8, 0x3f, 0xfc, 0x3f, 0xfc,
+	},
+	{ 0x01, 0x80, 0x03, 0xc0, 0x07, 0xe0, 0x04, 0x20,
+	  0x04, 0x20, 0x06, 0x60, 0x02, 0x40, 0x0c, 0x30,
+	  0x10, 0x08, 0x14, 0x08, 0x14, 0x28, 0x12, 0x28,
+	  0x0a, 0x50, 0x16, 0x68, 0x20, 0x04, 0x3f, 0xfc,
+	}
+};
+Cursor aimcursor = {
+	{-7, -7},
+	{ 0x03, 0xC0, 0x03, 0xC0, 0x03, 0xC0, 0x03, 0xC0,
+	  0x03, 0xC0, 0x03, 0xC0, 0xFF, 0xFF, 0xFF, 0xFF,
+	  0xFF, 0xFF, 0xFF, 0xFF, 0x03, 0xC0, 0x03, 0xC0,
+	  0x03, 0xC0, 0x03, 0xC0, 0x03, 0xC0, 0x03, 0xC0,
+	},
+	{ 0x00, 0x00, 0x01, 0x80, 0x01, 0x80, 0x01, 0x80,
+	  0x01, 0x80, 0x01, 0x80, 0x01, 0x80, 0x7F, 0xFE,
+	  0x7F, 0xFE, 0x01, 0x80, 0x01, 0x80, 0x01, 0x80,
+	  0x01, 0x80, 0x01, 0x80, 0x01, 0x80, 0x00, 0x00,
+	}
+};
+
+
 char deffont[] = "/lib/font/bit/pelm/unicode.9.font";
 char winspec[32];
 Channel *drawchan;
 Channel *ingress, *egress;
+Mousectl *mctl; /* only used to update the cursor */
 RFrame worldrf;
 Image *screenb;
 Image *tiletab[NTILES];
@@ -327,6 +356,7 @@ resetgame(void)
 int
 confirmdone(Mousectl *mc)
 {
+	/* thanks sigrid! */
 	Cursor yousure = {
 		{0, 0},
 		{ 0xf7, 0xfe, 0x15, 0x54, 0x1d, 0x54, 0x09, 0x54,
@@ -416,7 +446,7 @@ mmb(Mousectl *mc)
 			curship->bbox = mkshipbbox(curship->p, curship->orient, curship->ncells);
 
 			/* steer it, captain! don't let it go off-board! */
-			if(!rectinrect(curship->bbox, localboard.bbox))
+			if(!rectinrect(curship->bbox, localboard.bbox)){
 				switch(curship->orient){
 				case OH:
 					curship->bbox.min.x -= curship->bbox.max.x-localboard.bbox.max.x;
@@ -428,7 +458,9 @@ mmb(Mousectl *mc)
 					break;
 				}
 				curship->p = toboard(&localboard, curship->bbox.min);
-
+				moveto(mc, addpt(screen->r.min, curship->bbox.min));
+			}
+			/* …nor ram allied ships! */
 			if(rectXarmada(curship->bbox))
 				curship->bbox = ZR;
 		}
@@ -495,9 +527,15 @@ mouse(Mousectl *mc)
 		if(rectinrect(newbbox, localboard.bbox) && !rectXarmada(newbbox)){
 			curship->p = toboard(&localboard, mc->xy);
 			curship->bbox = newbbox;
+			send(drawchan, nil);
 		}
-		send(drawchan, nil);
 	}
+
+	if(game.state == Playing)
+		if(ptinrect(mc->xy, alienboard.bbox))
+			setcursor(mctl, &aimcursor);
+		else
+			setcursor(mctl, nil);
 
 	switch(mc->buttons){
 	case 1:
@@ -611,23 +649,26 @@ processcmd(char *cmd)
 		}
 		break;
 	case Outlaying:
-		if(strcmp(cmd, "wait") == 0)
+		if(strcmp(cmd, "wait") == 0){
 			game.state = Waiting;
-		else if(strcmp(cmd, "play") == 0)
+			setcursor(mctl, &waitcursor);
+		}else if(strcmp(cmd, "play") == 0)
 			game.state = Playing;
 		break;
 	case Playing:
-		if(strcmp(cmd, "wait") == 0)
+		if(strcmp(cmd, "wait") == 0){
 			game.state = Waiting;
-		else if(strcmp(cmd, "hit") == 0)
+			setcursor(mctl, &waitcursor);
+		}else if(strcmp(cmd, "hit") == 0)
 			settile(&alienboard, lastshot, Thit);
 		else if(strcmp(cmd, "miss") == 0)
 			settile(&alienboard, lastshot, Tmiss);
 		break;
 	case Waiting:
-		if(strcmp(cmd, "play") == 0)
+		if(strcmp(cmd, "play") == 0){
 			game.state = Playing;
-		else if(strncmp(cmd, "hit", 3) == 0){
+			setcursor(mctl, nil);
+		}else if(strncmp(cmd, "hit", 3) == 0){
 			cell = coords2cell(cmd+4);
 			for(i = 0; i < nelem(armada); i++)
 				if(ptinrect(fromboard(&localboard, cell), armada[i].bbox)){
@@ -735,6 +776,8 @@ threadmain(int argc, char *argv[])
 
 	display->locking = 1;
 	unlockdisplay(display);
+
+	mctl = in.mc;
 
 	screenb = eallocimage(display, rectsubpt(screen->r, screen->r.min), screen->chan, 0, DNofill);
 	worldrf.p = Pt2(0,0,1);
