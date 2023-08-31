@@ -171,7 +171,6 @@ resetgame(void)
 		armada[i].sunk = 0;
 	}
 	curship = nil;
-	game.state = Waiting0;
 	layoutdone = 0;
 }
 
@@ -713,10 +712,13 @@ processcmd(char *cmd)
 	if(debug)
 		fprint(2, "rcvd '%s'\n", cmd);
 
-	if(strcmp(cmd, "win") == 0)
+	if(strcmp(cmd, "win") == 0){
 		celebrate();
-	else if(strcmp(cmd, "lose") == 0)
+		game.state = Waiting0;
+	}else if(strcmp(cmd, "lose") == 0){
 		keelhaul();
+		game.state = Waiting0;
+	}
 
 	switch(game.state){
 	case Waiting0:
