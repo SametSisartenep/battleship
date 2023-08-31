@@ -42,6 +42,20 @@ popplayer(void)
 	return p;
 }
 
+/* non-locking version */
+Player *
+nlpopplayer(void)
+{
+	Player *p;
+
+	p = nil;
+	if(playerq.nplayers > 0)
+		p = playerq.players[--playerq.nplayers];
+	if(debug)
+		fprint(2, "poppin fd %d sfd %d state %d\n", p->fd, p->sfd, p->state);
+	return p;
+}
+
 void
 freeplayer(Player *p)
 {
@@ -82,7 +96,7 @@ netrecvthread(void *arg)
 }
 
 void
-serveproc(void *arg)
+battleproc(void *arg)
 {
 	NetConnInfo *nci[2];
 	Match *m;
@@ -104,7 +118,7 @@ serveproc(void *arg)
 	nci[1] = getnetconninfo(nil, m->pl[1]->fd);
 	if(nci[0] == nil || nci[1] == nil)
 		sysfatal("getnetconninfo: %r");
-	threadsetname("serveproc %s ↔ %s", nci[0]->raddr, nci[1]->raddr);
+	threadsetname("battleproc %s ↔ %s", nci[0]->raddr, nci[1]->raddr);
 	freenetconninfo(nci[0]);
 	freenetconninfo(nci[1]);
 
@@ -157,9 +171,9 @@ serveproc(void *arg)
 						fprint(2, "curstates [%d] %d / [%d] %d\n", i, p->state, i^1, op->state);
 					if(op->state == Waiting){
 						if(debug){
-							fprint(2, "map0:\n");
+							fprint(2, "map%d:\n", i);
 							fprintmap(2, p);
-							fprint(2, "map1:\n");
+							fprint(2, "map%d:\n", i^1);
 							fprintmap(2, op);
 						}
 						n0 = truerand();
@@ -207,7 +221,7 @@ Swapturn:
 	}
 Finish:
 	if(debug)
-		fprint(2, "[%d] serveproc ending\n", getpid());
+		fprint(2, "[%d] battleproc ending\n", getpid());
 	free(m);
 	chanfree(cp[0].c);
 	chanfree(cp[1].c);
@@ -225,6 +239,7 @@ reaper(void *)
 	threadsetname("reaper");
 
 	for(;;){
+		qlock(&playerq);
 		for(i = 0; i < playerq.nplayers; i++){
 			if(debug)
 				fprint(2, "reapin fd %d sfd %d state %d?",
@@ -233,13 +248,12 @@ reaper(void *)
 			if(n < 0 || strncmp(buf, "Close", 5) == 0){
 				if(debug)
 					fprint(2, " yes\n");
-				qlock(&playerq);
 				freeplayer(playerq.players[i]);
 				memmove(&playerq.players[i], &playerq.players[i+1], (--playerq.nplayers-i)*sizeof(Player*));
-				qunlock(&playerq);
 			}else if(debug)
 					fprint(2, " no\n");
 		}
+		qunlock(&playerq);
 		sleep(HZ2MS(1));
 	}
 }
@@ -252,24 +266,23 @@ matchmaker(void *)
 	threadsetname("matchmaker");
 
 	for(;;){
-		/*
-		 * TODO make fairer matches
-		 * locking playerq while checking nplayers and popping the couple.
-		 */
+		qlock(&playerq);
 		if(playerq.nplayers < 2){
+			qunlock(&playerq);
 			sleep(100);
 			continue;
 		}
 
 		m = emalloc(sizeof *m);
-		m->pl[0] = popplayer();
-		m->pl[1] = popplayer();
+		m->pl[0] = nlpopplayer();
+		m->pl[1] = nlpopplayer();
+		qunlock(&playerq);
 		m->pl[0]->state = Waiting0;
 		m->pl[1]->state = Waiting0;
 		memset(m->pl[0]->map, Twater, MAPW*MAPH);
 		memset(m->pl[1]->map, Twater, MAPW*MAPH);
 
-		proccreate(serveproc, m, mainstacksize);
+		proccreate(battleproc, m, mainstacksize);
 	}
 }
 

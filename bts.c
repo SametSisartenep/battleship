@@ -63,7 +63,6 @@ Cursor aimcursor = {
 	  0x21, 0x84, 0x31, 0x8c, 0x0f, 0xf0, 0x00, 0x00,
 	}
 };
-
 char deffont[] = "/lib/font/bit/pelm/unicode.9.font";
 char winspec[32];
 Channel *drawchan;
@@ -76,11 +75,11 @@ Board alienboard;
 Board localboard;
 Ship armada[NSHIPS];
 Ship *curship;
+int layoutdone;
 Point2 lastshot;
 
 struct {
 	int state;
-	int layoutdone;
 } game;
 
 struct {
@@ -173,7 +172,7 @@ resetgame(void)
 	}
 	curship = nil;
 	game.state = Waiting0;
-	game.layoutdone = 0;
+	layoutdone = 0;
 }
 
 Image *
@@ -546,11 +545,11 @@ rmb(Mousectl *mc)
 	mc->xy = addpt(mc->xy, screen->r.min);
 	switch(menuhit(3, mc, &menu, _screen)){
 	case PLACESHIP:
-		if(!game.layoutdone)
+		if(!layoutdone)
 			curship = &armada[0];
 		break;
 	case DONE:
-		if(curship != nil || game.layoutdone)
+		if(curship != nil || layoutdone)
 			break;
 
 		if(!confirmdone(mc))
@@ -565,7 +564,7 @@ rmb(Mousectl *mc)
 				cell2coords(armada[i].p), armada[i].orient == OH? 'h': 'v');
 		}
 		chanprint(egress, "layout %s\n", buf);
-		game.layoutdone++;
+		layoutdone++;
 		break;
 	}
 	send(drawchan, nil);
