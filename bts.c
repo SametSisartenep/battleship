@@ -175,6 +175,19 @@ resetgame(void)
 	layoutdone = 0;
 }
 
+Point
+vstring(Image *dst, Point p, Image *src, Point sp, Font *f, char *s)
+{
+	char buf[2];
+	buf[1] = 0;
+	while(*s){
+		buf[0] = *s++;
+		string(dst, p, src, sp, f, buf);
+		p.y += font->height;
+	}
+	return p;
+}
+
 Image *
 gettileimage(int type)
 {
@@ -256,6 +269,14 @@ drawinfo(Image *dst)
 		return;
 	p = Pt(SCRW/2 - stringwidth(font, s)/2, 0);
 	string(dst, p, display->white, ZP, font, s);
+
+	s = "TARGET";
+	p = subpt(alienboard.bbox.min, Pt(font->width+2,0));
+	vstring(dst, p, display->white, ZP, font, s);
+
+	s = "LOCAL";
+	p = Pt(localboard.bbox.max.x+2, localboard.bbox.min.y);
+	vstring(dst, p, display->white, ZP, font, s);
 
 	if(game.state == Outlaying){
 		if(c == nil)
