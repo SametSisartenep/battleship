@@ -39,15 +39,15 @@ Cursor waitcursor = {
 };
 Cursor boxcursor = {
 	{-7, -7},
-	{ 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-	  0xFF, 0xFF, 0xF8, 0x1F, 0xF8, 0x1F, 0xF8, 0x1F,
-	  0xF8, 0x1F, 0xF8, 0x1F, 0xF8, 0x1F, 0xFF, 0xFF,
-	  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF
+	{ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+	  0xff, 0xff, 0xf8, 0x1f, 0xf8, 0x1f, 0xf8, 0x1f,
+	  0xf8, 0x1f, 0xf8, 0x1f, 0xf8, 0x1f, 0xff, 0xff,
+	  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff
 	},
-	{ 0x00, 0x00, 0x7F, 0xFE, 0x7F, 0xFE, 0x7F, 0xFE,
-	  0x70, 0x0E, 0x70, 0x0E, 0x70, 0x0E, 0x70, 0x0E,
-	  0x70, 0x0E, 0x70, 0x0E, 0x70, 0x0E, 0x70, 0x0E,
-	  0x7F, 0xFE, 0x7F, 0xFE, 0x7F, 0xFE, 0x00, 0x00
+	{ 0x00, 0x00, 0x7f, 0xfe, 0x7f, 0xfe, 0x7f, 0xfe,
+	  0x70, 0x0e, 0x70, 0x0e, 0x70, 0x0e, 0x70, 0x0e,
+	  0x70, 0x0e, 0x70, 0x0e, 0x70, 0x0e, 0x70, 0x0e,
+	  0x7f, 0xfe, 0x7f, 0xfe, 0x7f, 0xfe, 0x00, 0x00
 	}
 };
 Cursor aimcursor = {
@@ -500,47 +500,38 @@ lmb(Mousectl *mc)
 void
 mmb(Mousectl *mc)
 {
-	enum {
-		ROTATE,
-	};
-	static char *items[] = {
-	 [ROTATE]	"rotate ship",
-		nil
-	};
-	static Menu menu = { .item = items };
-
 	if(game.state != Outlaying)
 		return;
 
-	mc->xy = addpt(mc->xy, screen->r.min);
-	switch(menuhit(2, mc, &menu, _screen)){
-	case ROTATE:
-		if(curship != nil){
-			curship->orient = curship->orient == OH? OV: OH;
-			curship->bbox = mkshipbbox(curship->p, curship->orient, curship->ncells);
+	if(curship != nil){
+		curship->orient = curship->orient == OH? OV: OH;
+		curship->bbox = mkshipbbox(curship->p, curship->orient, curship->ncells);
 
-			/* steer it, captain! don't let it go off-board! */
-			if(!rectinrect(curship->bbox, localboard.bbox)){
-				switch(curship->orient){
-				case OH:
-					curship->bbox.min.x -= curship->bbox.max.x-localboard.bbox.max.x;
-					curship->bbox.max.x = localboard.bbox.max.x;
-					break;
-				case OV:
-					curship->bbox.min.y -= curship->bbox.max.y-localboard.bbox.max.y;
-					curship->bbox.max.y = localboard.bbox.max.y;
-					break;
-				}
-				curship->p = toboard(&localboard, curship->bbox.min);
-				moveto(mc, addpt(screen->r.min, curship->bbox.min));
+		if(debug)
+			fprint(2, "curship orient %c\n", curship->orient == OH? 'h': 'v');
+
+		/* steer it, captain! don't let it go off-board! */
+		if(!rectinrect(curship->bbox, localboard.bbox)){
+			switch(curship->orient){
+			case OH:
+				curship->bbox.min.x -= curship->bbox.max.x-localboard.bbox.max.x;
+				curship->bbox.max.x = localboard.bbox.max.x;
+				break;
+			case OV:
+				curship->bbox.min.y -= curship->bbox.max.y-localboard.bbox.max.y;
+				curship->bbox.max.y = localboard.bbox.max.y;
+				break;
 			}
-			/* …nor ram allied ships! */
-			if(rectXarmada(curship->bbox))
-				curship->bbox = ZR;
+			curship->p = toboard(&localboard, curship->bbox.min);
+			moveto(mc, addpt(screen->r.min, curship->bbox.min));
+			readmouse(mc); /* ignore mmb click triggered by moveto */
 		}
-		break;
+		/* …nor ram allied ships! */
+		if(rectXarmada(curship->bbox))
+			curship->bbox = ZR;
+
+		send(drawchan, nil);
 	}
-	send(drawchan, nil);
 }
 
 void
