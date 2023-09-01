@@ -34,8 +34,10 @@ popplayer(void)
 
 	p = nil;
 	qlock(&playerq);
-	if(playerq.nplayers > 0)
-		p = playerq.players[--playerq.nplayers];
+	if(playerq.nplayers > 0){
+		p = playerq.players[0];
+		memmove(&playerq.players[0], &playerq.players[1], --playerq.nplayers * sizeof p);
+	}
 	qunlock(&playerq);
 	if(debug)
 		fprint(2, "poppin fd %d sfd %d state %d\n", p->fd, p->sfd, p->state);
@@ -49,8 +51,10 @@ nlpopplayer(void)
 	Player *p;
 
 	p = nil;
-	if(playerq.nplayers > 0)
-		p = playerq.players[--playerq.nplayers];
+	if(playerq.nplayers > 0){
+		p = playerq.players[0];
+		memmove(&playerq.players[0], &playerq.players[1], --playerq.nplayers * sizeof p);
+	}
 	if(debug)
 		fprint(2, "poppin fd %d sfd %d state %d\n", p->fd, p->sfd, p->state);
 	return p;
@@ -135,6 +139,7 @@ battleproc(void *arg)
 	threadcreate(netrecvthread, &cp[0], mainstacksize);
 	threadcreate(netrecvthread, &cp[1], mainstacksize);
 
+	/* TODO ask for the username */
 	write(m->pl[0]->fd, "layout\n", 7);
 	write(m->pl[1]->fd, "layout\n", 7);
 	m->pl[0]->state = Outlaying;
@@ -164,6 +169,7 @@ battleproc(void *arg)
 					for(j = 0; j < nelem(coords); j++){
 						cell = coords2cell(coords[j]);
 						orient = coords[j][strlen(coords[j])-1] == 'h'? OH: OV;
+						/* TODO keep track of the ships and report back on the first shot and when sunk */
 						settiles(p, cell, orient, shiplen(j), Tship);
 					}
 					p->state = Waiting;
