@@ -71,6 +71,7 @@ struct Board
 struct Player
 {
 	Map;
+	char name[8+1];
 	int fd;
 	int sfd;
 	int state;

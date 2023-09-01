@@ -139,11 +139,8 @@ battleproc(void *arg)
 	threadcreate(netrecvthread, &cp[0], mainstacksize);
 	threadcreate(netrecvthread, &cp[1], mainstacksize);
 
-	/* TODO ask for the username */
-	write(m->pl[0]->fd, "layout\n", 7);
-	write(m->pl[1]->fd, "layout\n", 7);
-	m->pl[0]->state = Outlaying;
-	m->pl[1]->state = Outlaying;
+	write(m->pl[0]->fd, "id\n", 3);
+	write(m->pl[1]->fd, "id\n", 3);
 
 	while((i = alt(a)) >= 0){
 		p = m->pl[i];
@@ -161,6 +158,17 @@ battleproc(void *arg)
 			fprint(2, "[%d] said '%s'\n", i, s);
 
 		switch(p->state){
+		case Waiting0:
+			if(strncmp(s, "id", 2) == 0){
+				snprint(p->name, sizeof p->name, "%s", strlen(s) > 3? s+3: "???");
+				write(p->fd, "layout\n", 7);
+				p->state = Outlaying;
+				if(op->state == Outlaying){
+					fprint(p->fd, "oid %s\n", op->name);
+					fprint(op->fd, "oid %s\n", p->name);
+				}
+			}
+			break;
 		case Outlaying:
 			if(strncmp(s, "layout", 6) == 0)
 				if(gettokens(s+7, coords, nelem(coords), ",") == nelem(coords)){
@@ -173,8 +181,6 @@ battleproc(void *arg)
 						settiles(p, cell, orient, shiplen(j), Tship);
 					}
 					p->state = Waiting;
-					if(debug)
-						fprint(2, "curstates [%d] %d / [%d] %d\n", i, p->state, i^1, op->state);
 					if(op->state == Waiting){
 						if(debug){
 							fprint(2, "map%d:\n", i);

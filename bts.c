@@ -65,6 +65,7 @@ Cursor aimcursor = {
 };
 char deffont[] = "/lib/font/bit/pelm/unicode.9.font";
 char winspec[32];
+char uid[8+1], oid[8+1];
 Channel *drawchan;
 Channel *ingress, *egress;
 Mousectl *mctl; /* only used to update the cursor */
@@ -172,6 +173,7 @@ resetgame(void)
 	}
 	curship = nil;
 	layoutdone = 0;
+	oid[0] = 0;
 }
 
 Point
@@ -272,10 +274,14 @@ drawinfo(Image *dst)
 	s = "TARGET";
 	p = subpt(alienboard.bbox.min, Pt(font->width+2,0));
 	vstring(dst, p, display->white, ZP, font, s);
-
 	s = "LOCAL";
 	p = Pt(localboard.bbox.max.x+2, localboard.bbox.min.y);
 	vstring(dst, p, display->white, ZP, font, s);
+
+	p = Pt(alienboard.bbox.max.x+2, alienboard.bbox.min.y);
+	vstring(dst, p, display->white, ZP, font, oid);
+	p = subpt(localboard.bbox.min, Pt(font->width+2,0));
+	vstring(dst, p, display->white, ZP, font, uid);
 
 	if(game.state == Outlaying){
 		if(c == nil)
@@ -716,7 +722,8 @@ processcmd(char *cmd)
 		if(strcmp(cmd, "layout") == 0){
 			game.state = Outlaying;
 			curship = &armada[0];
-		}
+		}else if(strcmp(cmd, "id") == 0)
+			chanprint(egress, "id %s\n", uid);
 		csetcursor(mctl, &patrolcursor);
 		break;
 	case Outlaying:
@@ -725,6 +732,8 @@ processcmd(char *cmd)
 			csetcursor(mctl, &waitcursor);
 		}else if(strcmp(cmd, "play") == 0)
 			game.state = Playing;
+		else if(strncmp(cmd, "oid", 3) == 0)
+			snprint(oid, sizeof oid, "%s", cmd+4);
 		break;
 	case Playing:
 		if(strcmp(cmd, "wait") == 0){
@@ -812,6 +821,13 @@ void
 threadmain(int argc, char *argv[])
 {
 	char *addr;
+	/*
+	 * TODO
+	 * if it's not static it messes with in.mc->xy later, probably
+	 * because of an stack overflow somewhere.  have to investigate
+	 * with wpset("w", &in.mc->xy, sizeof(Point*)); in acid(1)
+	 */
+	static char *user;
 	int fd;
 	Input in;
 
@@ -849,6 +865,9 @@ threadmain(int argc, char *argv[])
 	unlockdisplay(display);
 
 	mctl = in.mc;
+	if((user = getenv("user")) == nil)
+		user = getuser();
+	snprint(uid, sizeof uid, "%s", user);
 
 	screenb = eallocimage(display, rectsubpt(screen->r, screen->r.min), screen->chan, 0, DNofill);
 	worldrf.p = Pt2(0,0,1);
