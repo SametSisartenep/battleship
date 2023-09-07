@@ -31,7 +31,6 @@ enum {
 	KB = 1024,
 };
 
-typedef struct Input Input;
 typedef struct Ship Ship;
 typedef struct Map Map;
 typedef struct Board Board;
@@ -39,12 +38,6 @@ typedef struct Player Player;
 typedef struct Playerq Playerq;
 typedef struct Match Match;
 typedef struct Chanpipe Chanpipe;
-
-struct Input
-{
-	Mousectl *mc;
-	Keyboardctl *kc;
-};
 
 struct Ship
 {

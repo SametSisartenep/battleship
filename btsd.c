@@ -299,13 +299,11 @@ matchmaker(void *)
 }
 
 void
-listenthread(void *arg)
+listenthread(char *addr)
 {
-	char *addr, adir[40], ldir[40], aux[128], *s;
+	char adir[40], ldir[40], aux[128], *s;
 	int acfd, lcfd, dfd, sfd;
 	Player *p;
-
-	addr = arg;
 
 	acfd = announce(addr, adir);
 	if(acfd < 0)
@@ -357,12 +355,12 @@ threadmain(int argc, char *argv[])
 	case 'a':
 		addr = EARGF(usage());
 		break;
+	default: usage();
 	}ARGEND
 	if(argc != 0)
 		usage();
 
 	proccreate(matchmaker, nil, mainstacksize);
 	proccreate(reaper, nil, mainstacksize);
-	threadcreate(listenthread, addr, mainstacksize);
-	yield();
+	listenthread(addr);
 }

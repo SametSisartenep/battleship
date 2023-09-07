@@ -344,7 +344,7 @@ resize(void)
 		}
 	}
 
-	send(drawchan, nil);
+	nbsend(drawchan, nil);
 }
 
 void
@@ -500,7 +500,7 @@ lmb(Mousectl *mc)
 		}
 		break;
 	}
-	send(drawchan, nil);
+	nbsend(drawchan, nil);
 }
 
 void
@@ -536,7 +536,7 @@ mmb(Mousectl *mc)
 		if(rectXarmada(curship->bbox))
 			curship->bbox = ZR;
 
-		send(drawchan, nil);
+		nbsend(drawchan, nil);
 	}
 }
 
@@ -584,7 +584,7 @@ rmb(Mousectl *mc)
 		layoutdone++;
 		break;
 	}
-	send(drawchan, nil);
+	nbsend(drawchan, nil);
 }
 
 void
@@ -605,7 +605,7 @@ mouse(Mousectl *mc)
 		if(rectinrect(newbbox, localboard.bbox) && !rectXarmada(newbbox)){
 			curship->p = toboard(&localboard, mc->xy);
 			curship->bbox = newbbox;
-			send(drawchan, nil);
+			nbsend(drawchan, nil);
 		}
 	}
 
@@ -636,44 +636,6 @@ key(Rune r)
 	case 'q':
 		threadexitsall(nil);
 	}
-}
-
-void
-bobross(void *)
-{
-	while(recv(drawchan, nil) > 0)
-		redraw();
-	sysfatal("painter died");
-}
-
-void
-inputthread(void *arg)
-{
-	Input *in;
-	Rune r;
-	Alt a[4];
-
-	in = arg;
-
-	a[0].c = in->mc->c; a[0].v = &in->mc->Mouse; a[0].op = CHANRCV;
-	a[1].c = in->mc->resizec; a[1].v = nil; a[1].op = CHANRCV;
-	a[2].c = in->kc->c; a[2].v = &r; a[2].op = CHANRCV;
-	a[3].op = CHANEND;
-
-	for(;;)
-		switch(alt(a)){
-		case -1:
-			sysfatal("input thread interrupted");
-		case 0:
-			mouse(in->mc);
-			break;
-		case 1:
-			resize();
-			break;
-		case 2:
-			key(r);
-			break;
-		}
 }
 
 void
@@ -762,7 +724,7 @@ processcmd(char *cmd)
 		}
 		break;
 	}
-	send(drawchan, nil);
+	nbsend(drawchan, nil);
 }
 
 void
@@ -821,15 +783,10 @@ void
 threadmain(int argc, char *argv[])
 {
 	char *addr;
-	/*
-	 * TODO
-	 * if it's not static it messes with in.mc->xy later, probably
-	 * because of an stack overflow somewhere.  have to investigate
-	 * with wpset("w", &in.mc->xy, sizeof(Point*)); in acid(1)
-	 */
-	static char *user;
+	char *user;
 	int fd;
-	Input in;
+	Mousectl *mc;
+	Keyboardctl *kc;
 
 	GEOMfmtinstall();
 	ARGBEGIN{
@@ -856,15 +813,15 @@ threadmain(int argc, char *argv[])
 		sysfatal("newwindow: %r");
 	if(initdraw(nil, deffont, "bts") < 0)
 		sysfatal("initdraw: %r");
-	if((in.mc = initmouse(nil, screen)) == nil)
+	if((mc = initmouse(nil, screen)) == nil)
 		sysfatal("initmouse: %r");
-	if((in.kc = initkeyboard(nil)) == nil)
+	if((kc = initkeyboard(nil)) == nil)
 		sysfatal("initkeyboard: %r");
 
 	display->locking = 1;
 	unlockdisplay(display);
 
-	mctl = in.mc;
+	mctl = mc;
 	if((user = getenv("user")) == nil)
 		user = getuser();
 	snprint(uid, sizeof uid, "%s", user);
@@ -880,13 +837,38 @@ threadmain(int argc, char *argv[])
 	game.state = Waiting0;
 	csetcursor(mctl, &patrolcursor);
 
-	drawchan = chancreate(sizeof(void*), 0);
+	drawchan = chancreate(sizeof(void*), 1);
 	ingress = chancreate(sizeof(char*), 1);
 	egress = chancreate(sizeof(char*), 1);
-	threadcreate(bobross, nil, mainstacksize);
-	threadcreate(inputthread, &in, mainstacksize);
 	threadcreate(netrecvthread, &fd, mainstacksize);
 	threadcreate(netsendthread, &fd, mainstacksize);
-	send(drawchan, nil);
-	yield();
+	nbsend(drawchan, nil);
+
+	Rune r;
+	enum {MOUSE, RESIZE, KEYS, DRAW, NONE};
+	Alt a[] = {
+	[MOUSE]  = {mc->c, &mc->Mouse, CHANRCV},
+	[RESIZE] = {mc->resizec, nil, CHANRCV},
+	[KEYS]   = {kc->c, &r, CHANRCV},
+	[DRAW]   = {drawchan, nil, CHANRCV},
+	[NONE]   = {nil, nil, CHANEND}
+	};
+
+	for(;;)
+		switch(alt(a)){
+		default:
+			sysfatal("input thread interrupted");
+		case MOUSE:
+			mouse(mc);
+			break;
+		case RESIZE:
+			resize();
+			break;
+		case KEYS:
+			key(r);
+			break;
+		case DRAW:
+			redraw();
+			break;
+		}
 }
