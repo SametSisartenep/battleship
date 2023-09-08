@@ -27,26 +27,9 @@ pushplayer(Player *p)
 		fprint(2, "pushed fd %d sfd %d state %d\n", p->fd, p->sfd, p->state);
 }
 
+/* XXX non-locking */
 Player *
 popplayer(void)
-{
-	Player *p;
-
-	p = nil;
-	qlock(&playerq);
-	if(playerq.nplayers > 0){
-		p = playerq.players[0];
-		memmove(&playerq.players[0], &playerq.players[1], --playerq.nplayers * sizeof p);
-	}
-	qunlock(&playerq);
-	if(debug)
-		fprint(2, "poppin fd %d sfd %d state %d\n", p->fd, p->sfd, p->state);
-	return p;
-}
-
-/* non-locking version */
-Player *
-nlpopplayer(void)
 {
 	Player *p;
 
@@ -135,7 +118,7 @@ battleproc(void *arg)
 	a[1].c = cp[1].c; a[1].v = &s; a[1].op = CHANRCV;
 	a[2].op = CHANEND;
 
-	threadsetgrp(truerand());
+	threadsetgrp(cp[0].fd);
 	threadcreate(netrecvthread, &cp[0], mainstacksize);
 	threadcreate(netrecvthread, &cp[1], mainstacksize);
 
@@ -286,8 +269,8 @@ matchmaker(void *)
 		}
 
 		m = emalloc(sizeof *m);
-		m->pl[0] = nlpopplayer();
-		m->pl[1] = nlpopplayer();
+		m->pl[0] = popplayer();
+		m->pl[1] = popplayer();
 		qunlock(&playerq);
 		m->pl[0]->state = Waiting0;
 		m->pl[1]->state = Waiting0;
