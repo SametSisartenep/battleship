@@ -16,10 +16,12 @@ HFILES=\
 
 </sys/src/cmd/mkmany
 
-install:V: man
+ohman:V:
+	cp bts.man $MAN/battleship
+
+install:V: ohman
 
 uninstall:V:
-	for(i in $TARG){
+	for(i in $TARG)
 		rm -f $BIN/$i
-		rm -f $MAN/$i
-	}
+	rm -f $MAN/battleship

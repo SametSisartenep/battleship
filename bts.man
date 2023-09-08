@@ -1,0 +1,62 @@
+.TH battleship 1
+.SH NAME
+bts, btsd \- multi-user on-line battleship (sink the fleet)
+.SH SYNOPSIS
+.B games/bts
+[
+.B -d
+]
+.I dialstring
+.br
+.B games/btsd
+[
+.B -d
+]
+[
+.B -a
+.I addr
+]
+.SH DESCRIPTION
+.I bts
+and
+.I btsd
+are the client and server for a multi-user, on-line version of
+.IR Battleship ,
+the strategy and guessing board game.  It's based on Milton Bradley's
+1990 release, but without the player having to disclose the kind of
+ship the opponent hits.
+.PP
+The
+.I -d
+flag enables debugging for both programs.  You can change the server's
+announce address with
+.IR -a ,
+which by default is tcp!*!3047.
+.SH PLAYING
+First each player lays their fleet on their
+.I local
+board.
+.PP
+Then the battle will begin, and each player has a turn to try and
+figure out their opponent's fleet layout, by taking a shot at any
+coordinate in the
+.I target
+board.
+.PP
+There's no timeout, so players can take as long as they want to fire a
+shot.  Use this to deploy your PSYOP skills.
+.PP
+The first player to find and sink the enemy fleet wins.  If you quit
+or disconnect, you lose.
+.SH SOURCE
+.B /sys/src/games/battleship
+.SH SEE ALSO
+.IR games (1)
+.br
+battleship.pdf,
+.I
+Milton Bradley Company, 1990.
+.SH BUGS
+What are bugs? turns out it's a complicated question.
+.SH HISTORY
+Battleship first appeared in 9front on September, 2023.
