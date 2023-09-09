@@ -553,7 +553,7 @@ rmb(Mousectl *mc)
 		nil
 	};
 	static Menu menu = { .item = items };
-	char buf[5*(1+3+1)+1];
+	char buf[NSHIPS*(1+3+1)+1];
 	int i, n;
 
 	if(game.state != Outlaying)
@@ -591,6 +591,7 @@ void
 mouse(Mousectl *mc)
 {
 	Rectangle newbbox;
+	static Mouse oldm;
 
 	mc->xy = subpt(mc->xy, screen->r.min);
 
@@ -620,12 +621,15 @@ mouse(Mousectl *mc)
 		lmb(mc);
 		break;
 	case 2:
-		mmb(mc);
+		if(oldm.buttons != 2)
+			mmb(mc);
 		break;
 	case 4:
 		rmb(mc);
 		break;
 	}
+
+	oldm = mc->Mouse;
 }
 
 void
