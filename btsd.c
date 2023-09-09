@@ -10,38 +10,8 @@
 
 int debug;
 
-Playerq playerq;
+Channel *playerq;
 
-
-void
-pushplayer(Player *p)
-{
-	qlock(&playerq);
-	if(++playerq.nplayers > playerq.cap){
-		playerq.cap = playerq.nplayers;
-		playerq.players = erealloc(playerq.players, playerq.cap * sizeof p);
-	}
-	playerq.players[playerq.nplayers-1] = p;
-	qunlock(&playerq);
-	if(debug)
-		fprint(2, "pushed fd %d sfd %d state %d\n", p->fd, p->sfd, p->state);
-}
-
-/* XXX non-locking */
-Player *
-popplayer(void)
-{
-	Player *p;
-
-	p = nil;
-	if(playerq.nplayers > 0){
-		p = playerq.players[0];
-		memmove(&playerq.players[0], &playerq.players[1], --playerq.nplayers * sizeof p);
-	}
-	if(debug)
-		fprint(2, "poppin fd %d sfd %d state %d\n", p->fd, p->sfd, p->state);
-	return p;
-}
 
 void
 freeplayer(Player *p)
@@ -49,6 +19,18 @@ freeplayer(Player *p)
 	close(p->sfd);
 	close(p->fd);
 	free(p);
+}
+
+int
+isconnected(Player *p)
+{
+	char buf[8];
+	int n;
+
+	n = pread(p->sfd, buf, sizeof buf, 0);
+	if(n < 0 || strncmp(buf, "Close", 5) == 0)
+		return 0;
+	return 1;
 }
 
 void
@@ -122,6 +104,13 @@ battleproc(void *arg)
 	threadcreate(netrecvthread, &cp[0], mainstacksize);
 	threadcreate(netrecvthread, &cp[1], mainstacksize);
 
+	for(i = 0; i < nelem(m->pl); i++)
+		if(!isconnected(m->pl[i])){
+			sendp(playerq, m->pl[i^1]);
+			freeplayer(m->pl[i]);
+			goto Finish;
+		}
+
 	write(m->pl[0]->fd, "id\n", 3);
 	write(m->pl[1]->fd, "id\n", 3);
 
@@ -133,7 +122,7 @@ battleproc(void *arg)
 			if(debug)
 				fprint(2, "[%d] alt: %s\n", getpid(), a[i].err);
 			write(op->fd, "win\n", 4);
-			pushplayer(op);
+			sendp(playerq, op);
 			freeplayer(p);
 			break;
 		}
@@ -188,11 +177,11 @@ battleproc(void *arg)
 					settile(op, cell, Thit);
 					write(p->fd, "hit\n", 4);
 					fprint(op->fd, "hit %s\n", cell2coords(cell));
-					if(countshipcells(op) < 1){
+					if(countshipcells(op) < 17){
 						write(p->fd, "win\n", 4);
 						write(op->fd, "lose\n", 5);
-						pushplayer(p);
-						pushplayer(op);
+						sendp(playerq, p);
+						sendp(playerq, op);
 						goto Finish;
 					}
 					goto Swapturn;
@@ -225,64 +214,31 @@ Finish:
 }
 
 void
-reaper(void *)
-{
-	char buf[8];
-	ulong i;
-	int n;
-
-	threadsetname("reaper");
-
-	for(;;){
-		qlock(&playerq);
-		for(i = 0; i < playerq.nplayers; i++){
-			if(debug)
-				fprint(2, "reapin fd %d sfd %d state %d?",
-						playerq.players[i]->fd, playerq.players[i]->sfd, playerq.players[i]->state);
-			n = pread(playerq.players[i]->sfd, buf, sizeof buf, 0);
-			if(n < 0 || strncmp(buf, "Close", 5) == 0){
-				if(debug)
-					fprint(2, " yes\n");
-				freeplayer(playerq.players[i]);
-				memmove(&playerq.players[i], &playerq.players[i+1], (--playerq.nplayers-i)*sizeof(Player*));
-			}else if(debug)
-					fprint(2, " no\n");
-		}
-		qunlock(&playerq);
-		sleep(HZ2MS(1));
-	}
-}
-
-void
 matchmaker(void *)
 {
 	Match *m;
+	Player *pl[2];
 
 	threadsetname("matchmaker");
 
 	for(;;){
-		qlock(&playerq);
-		if(playerq.nplayers < 2){
-			qunlock(&playerq);
-			sleep(100);
-			continue;
-		}
+		pl[0] = recvp(playerq);
+		pl[1] = recvp(playerq);
 
+		pl[0]->state = Waiting0;
+		pl[1]->state = Waiting0;
+		memset(pl[0]->map, Twater, MAPW*MAPH);
+		memset(pl[1]->map, Twater, MAPW*MAPH);
 		m = emalloc(sizeof *m);
-		m->pl[0] = popplayer();
-		m->pl[1] = popplayer();
-		qunlock(&playerq);
-		m->pl[0]->state = Waiting0;
-		m->pl[1]->state = Waiting0;
-		memset(m->pl[0]->map, Twater, MAPW*MAPH);
-		memset(m->pl[1]->map, Twater, MAPW*MAPH);
+		m->pl[0] = pl[0];
+		m->pl[1] = pl[1];
 
 		proccreate(battleproc, m, mainstacksize);
 	}
 }
 
 void
-listenthread(char *addr)
+dolisten(char *addr)
 {
 	char adir[40], ldir[40], aux[128], *s;
 	int acfd, lcfd, dfd, sfd;
@@ -309,7 +265,7 @@ listenthread(char *addr)
 			p->fd = dfd;
 			p->sfd = sfd;
 			p->state = Waiting0;
-			pushplayer(p);
+			sendp(playerq, p);
 		}
 		close(lcfd);
 	}
@@ -343,7 +299,7 @@ threadmain(int argc, char *argv[])
 	if(argc != 0)
 		usage();
 
+	playerq = chancreate(sizeof(Player*), 8);
 	proccreate(matchmaker, nil, mainstacksize);
-	proccreate(reaper, nil, mainstacksize);
-	listenthread(addr);
+	dolisten(addr);
 }

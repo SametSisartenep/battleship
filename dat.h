@@ -35,7 +35,6 @@ typedef struct Ship Ship;
 typedef struct Map Map;
 typedef struct Board Board;
 typedef struct Player Player;
-typedef struct Playerq Playerq;
 typedef struct Match Match;
 typedef struct Chanpipe Chanpipe;
 
@@ -68,14 +67,6 @@ struct Player
 	int fd;
 	int sfd;
 	int state;
-};
-
-struct Playerq
-{
-	QLock;
-	Player **players;
-	ulong cap;
-	ulong nplayers;
 };
 
 struct Match
