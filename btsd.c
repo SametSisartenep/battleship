@@ -177,7 +177,7 @@ battleproc(void *arg)
 					settile(op, cell, Thit);
 					write(p->fd, "hit\n", 4);
 					fprint(op->fd, "hit %s\n", cell2coords(cell));
-					if(countshipcells(op) < 17){
+					if((debug && countshipcells(op) < 17) || (!debug && countshipcells(op) < 1)){
 						write(p->fd, "win\n", 4);
 						write(op->fd, "lose\n", 5);
 						sendp(playerq, p);
