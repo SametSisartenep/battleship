@@ -23,6 +23,14 @@ static char *shipnametab[] = {
  [Ssubmarine]	"submarine",
  [Sdestroyer]	"destroyer",
 };
+static char *statenametab[] = {
+ [Waiting0]	"Waiting0",
+ [Watching]	"Watching",
+ [Ready]	"Ready",
+ [Outlaying]	"Outlaying",
+ [Waiting]	"Waiting",
+ [Playing]	"Playing",
+};
 
 
 char *
@@ -72,11 +80,8 @@ settiles(Map *m, Point2 cell, int o, int ncells, int type)
 {
 	Point2 sv;
 
-	switch(o){
-	case OH: sv = Vec2(1,0); break;
-	case OV: sv = Vec2(0,1); break;
-	default: sysfatal("settiles: wrong ship orientation");
-	}
+	assert(o == OH || o == OV);
+	sv = o == OH? Vec2(1,0): Vec2(0,1);
 
 	while(ncells-- > 0){
 		settile(m, cell, type);
@@ -116,7 +121,7 @@ countshipcells(Map *m)
 int
 shiplen(int stype)
 {
-	if(stype < 0 || stype >= NSHIPS)
+	if(stype < 0 || stype >= nelem(shiplentab))
 		return -1;
 	return shiplentab[stype];
 }
@@ -124,7 +129,15 @@ shiplen(int stype)
 char *
 shipname(int stype)
 {
-	if(stype < 0 || stype >= NSHIPS)
+	if(stype < 0 || stype >= nelem(shipnametab))
 		return nil;
 	return shipnametab[stype];
+}
+
+char *
+statename(int state)
+{
+	if(state < 0 || state > nelem(statenametab))
+		return nil;
+	return statenametab[state];
 }

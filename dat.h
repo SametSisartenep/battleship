@@ -16,6 +16,8 @@ enum {
 	OV, /* vertical */
 
 	Waiting0 = 0,
+	Watching,
+	Ready,
 	Outlaying,
 	Waiting,
 	Playing,
@@ -34,9 +36,11 @@ enum {
 typedef struct Ship Ship;
 typedef struct Map Map;
 typedef struct Board Board;
+typedef struct Chanpipe Chanpipe;
 typedef struct Player Player;
 typedef struct Match Match;
-typedef struct Chanpipe Chanpipe;
+typedef struct Msg Msg;
+typedef struct Stands Stands;
 
 struct Ship
 {
@@ -44,7 +48,7 @@ struct Ship
 	Rectangle bbox;
 	int orient;
 	int ncells;
-	int *hit; /* |hit| = ncells and hit ∈ {0,1} */
+	int *hit; /* |hit| = ncells and hitᵢ ∈ {0,1} */
 	int sunk;
 };
 
@@ -60,22 +64,45 @@ struct Board
 	Rectangle bbox;
 };
 
+struct Chanpipe
+{
+	Channel *in;
+	Channel *out;
+	Channel *ctl;
+	int fd;
+};
+
 struct Player
 {
 	Map;
 	char name[8+1];
-	int fd;
-	int sfd;
 	int state;
+	Match *battle;
+	NetConnInfo *nci;
+	Chanpipe io;
+	Channel *ctl;
 };
 
 struct Match
 {
+	RWLock;
+	int id;
 	Player *pl[2];
+	Channel *data;
+	Channel *ctl;
+	Match *prev;
+	Match *next;
 };
 
-struct Chanpipe
+struct Msg
 {
-	Channel *c;
-	int fd;
+	Player *from;
+	char *body;
+};
+
+struct Stands
+{
+	Player **seats;
+	ulong nused;
+	ulong cap;
 };

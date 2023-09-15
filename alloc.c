@@ -32,6 +32,17 @@ erealloc(void *p, ulong n)
 	return np;
 }
 
+char *
+estrdup(char *s)
+{
+	char *ns;
+
+	ns = strdup(s);
+	if(ns == nil)
+		sysfatal("strdup: %r");
+	return ns;
+}
+
 Image*
 eallocimage(Display *d, Rectangle r, ulong chan, int repl, ulong col)
 {

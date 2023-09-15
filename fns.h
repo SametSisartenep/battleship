@@ -5,6 +5,7 @@
  */
 void *emalloc(ulong);
 void *erealloc(void*, ulong);
+char *estrdup(char*);
 Image *eallocimage(Display*, Rectangle, ulong, int, ulong);
 
 /*
@@ -19,3 +20,4 @@ void fprintmap(int, Map*);
 int countshipcells(Map*);
 int shiplen(int);
 char *shipname(int);
+char *statename(int);
