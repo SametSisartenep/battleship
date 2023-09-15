@@ -509,7 +509,7 @@ lmb(Mousectl *mc)
 	else if(ptinrect(mc->xy, localboard.bbox))
 		b = &localboard;
 
-	if(b == nil)
+	if(b == nil || conclusion.s != nil)
 		return;
 
 	cell = toboard(b, mc->xy);
@@ -639,7 +639,7 @@ mouse(Mousectl *mc)
 		}
 	}
 
-	if(game.state == Playing)
+	if(game.state == Playing && conclusion.s == nil)
 		if(ptinrect(mc->xy, alienboard.bbox))
 			csetcursor(mctl, &aimcursor);
 		else
