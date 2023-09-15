@@ -645,18 +645,18 @@ mouse(Mousectl *mc)
 		else
 			csetcursor(mctl, nil);
 
-	switch(mc->buttons){
-	case 1:
-		lmb(mc);
-		break;
-	case 2:
-		if(oldm.buttons != 2)
+	if(oldm.buttons != mc->buttons)
+		switch(mc->buttons){
+		case 1:
+			lmb(mc);
+			break;
+		case 2:
 			mmb(mc);
-		break;
-	case 4:
-		rmb(mc);
-		break;
-	}
+			break;
+		case 4:
+			rmb(mc);
+			break;
+		}
 
 	oldm = mc->Mouse;
 }
