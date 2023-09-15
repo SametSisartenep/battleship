@@ -64,6 +64,8 @@ Cursor aimcursor = {
 	}
 };
 char deffont[] = "/lib/font/bit/pelm/unicode.9.font";
+char titlefontpath[] = "assets/font/gunmetal/gunmetal.48.font";
+Font *titlefont;
 char winspec[32];
 char uid[8+1], oid[8+1];
 Channel *drawchan;
@@ -252,6 +254,14 @@ drawboard(Image *dst, Board *b)
 }
 
 void
+drawtitle(Image *dst)
+{
+	static char s[] = "BATTLESHIP";
+
+	string(dst, Pt(SCRW/2 - stringwidth(titlefont, s)/2, 0), display->white, ZP, titlefont, s);
+}
+
+void
 drawgameoptions(Image *dst)
 {
 	static char s[] = "press p to play, w to watch";
@@ -327,6 +337,7 @@ redraw(void)
 	draw(screenb, screenb->r, display->black, nil, ZP);
 	switch(game.state){
 	case Waiting0:
+		drawtitle(screenb);
 		drawgameoptions(screenb);
 		break;
 	default:
@@ -878,6 +889,10 @@ threadmain(int argc, char *argv[])
 	worldrf.p = Pt2(0,0,1);
 	worldrf.bx = Vec2(1,0);
 	worldrf.by = Vec2(0,1);
+
+	titlefont = openfont(display, titlefontpath);
+	if(titlefont == nil)
+		sysfatal("openfont: %r");
 
 	inittiles();
 	initboards();
