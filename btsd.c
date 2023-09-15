@@ -472,6 +472,8 @@ matchmaker(void *)
 			pl[i]->state = Ready;
 			memset(pl[i]->map, Twater, MAPW*MAPH);
 
+			chanprint(pl[i]->io.out, "queued\n");
+
 			if(++i > 1){
 				m = newmatch(pl[0], pl[1]);
 				addmatch(m);

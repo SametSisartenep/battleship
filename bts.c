@@ -136,11 +136,8 @@ mkshipbbox(Point2 p, int o, int ncells)
 {
 	Point2 sv;
 
-	switch(o){
-	case OH: sv = Vec2(1,0); break;
-	case OV: sv = Vec2(0,1); break;
-	default: sysfatal("mkshipbbox: wrong ship orientation");
-	}
+	assert(o == OH || o == OV);
+	sv = o == OH? Vec2(1,0): Vec2(0,1);
 
 	return Rpt(
 		fromboard(&localboard, p),
@@ -169,11 +166,13 @@ resetgame(void)
 	for(i = 0; i < nelem(armada); i++){
 		armada[i].bbox = ZR;
 		memset(armada[i].hit, 0, armada[i].ncells*sizeof(int));
-		armada[i].sunk = 0;
 	}
 	curship = nil;
 	layoutdone = 0;
 	oid[0] = 0;
+	game.state = Waiting0;
+	conclusion.s = nil;
+	csetcursor(mctl, &patrolcursor);
 }
 
 Point
@@ -253,21 +252,27 @@ drawboard(Image *dst, Board *b)
 }
 
 void
+drawgameoptions(Image *dst)
+{
+	static char s[] = "press p to play, w to watch";
+
+	string(dst, Pt(SCRW/2 - stringwidth(font, s)/2, 10*font->height+5), display->white, ZP, font, s);
+}
+
+void
 drawinfo(Image *dst)
 {
 	static Image *c;
 	Point p;
 	char *s, aux[32];
 
-	s = nil;
+	s = "";
 	switch(game.state){
-	case Waiting0: s = "looking for players"; break;
+	case Ready: s = "looking for players"; break;
 	case Outlaying: s = "place the fleet"; break;
 	case Waiting: s = "wait for your turn"; break;
 	case Playing: s = "your turn"; break;
 	}
-	if(s == nil)
-		return;
 	p = Pt(SCRW/2 - stringwidth(font, s)/2, 0);
 	string(dst, p, display->white, ZP, font, s);
 
@@ -299,30 +304,44 @@ drawinfo(Image *dst)
 }
 
 void
+drawconclusion(Image *dst)
+{
+	static Image *shadow;
+	static char s[] = "press any key to continue";
+
+	if(conclusion.s == nil)
+		return;
+
+	if(shadow == nil)
+		shadow = eallocimage(display, Rect(0,0,1,1), RGBA32, 1, 0x0000007f);
+	draw(dst, dst->r, shadow, nil, ZP);
+	string(dst, Pt(SCRW/2 - stringwidth(font, conclusion.s)/2, font->height+5), conclusion.c, ZP, font, conclusion.s);
+	string(dst, Pt(SCRW/2 - stringwidth(font, s)/2, 10*font->height+5), display->white, ZP, font, s);
+}
+
+void
 redraw(void)
 {
 	lockdisplay(display);
 
 	draw(screenb, screenb->r, display->black, nil, ZP);
-	drawboard(screenb, &alienboard);
-	drawboard(screenb, &localboard);
-	drawships(screenb);
-	drawinfo(screenb);
-
-	if(conclusion.s != nil)
-		string(screenb, Pt(SCRW/2 - stringwidth(font, conclusion.s)/2, font->height+5), conclusion.c, ZP, font, conclusion.s);
+	switch(game.state){
+	case Waiting0:
+		drawgameoptions(screenb);
+		break;
+	default:
+		drawboard(screenb, &alienboard);
+		drawboard(screenb, &localboard);
+		drawships(screenb);
+		drawinfo(screenb);
+		break;
+	}
+	drawconclusion(screenb);
 
 	draw(screen, screen->r, screenb, nil, ZP);
 
 	flushimage(display, 1);
 	unlockdisplay(display);
-
-	if(conclusion.s != nil){
-		resetgame();
-		conclusion.s = nil;
-		sleep(5000);
-		redraw();
-	}
 }
 
 void
@@ -429,7 +448,6 @@ initarmada(void)
 		s->orient = OV;
 		s->hit = emalloc(s->ncells*sizeof(int));
 		memset(s->hit, 0, s->ncells*sizeof(int));
-		s->sunk = 0;
 	}
 }
 
@@ -639,6 +657,20 @@ key(Rune r)
 	case Kdel:
 	case 'q':
 		threadexitsall(nil);
+	case 'p':
+		if(game.state != Waiting0)
+			break;
+		chanprint(egress, "play\n");
+		break;
+	case 'w':
+		if(game.state != Waiting0)
+			break;
+		chanprint(egress, "watch\n");
+	default:
+		if(conclusion.s != nil){
+			resetgame();
+			nbsend(drawchan, nil);
+		}
 	}
 }
 
@@ -667,63 +699,74 @@ keelhaul(void)
 }
 
 void
-processcmd(char *cmd)
+processcmd(char *s)
 {
 	Point2 cell;
-	int i;
+	char *cmd[2];
+	int i, nc;
 
 	if(debug)
-		fprint(2, "rcvd '%s'\n", cmd);
+		fprint(2, "rcvd '%s'\n", s);
 
-	if(strcmp(cmd, "win") == 0){
+	nc = tokenize(s, cmd, nelem(cmd));
+	if(nc < 1)
+		return;
+
+	if(nc == 1 && strcmp(cmd[0], "win") == 0)
 		celebrate();
-		game.state = Waiting0;
-	}else if(strcmp(cmd, "lose") == 0){
+	else if(nc == 1 && strcmp(cmd[0], "lose") == 0)
 		keelhaul();
-		game.state = Waiting0;
-	}
 
 	switch(game.state){
 	case Waiting0:
-		if(strcmp(cmd, "layout") == 0){
+		if(nc == 1 && strcmp(cmd[0], "id") == 0)
+			chanprint(egress, "id %s\n", uid);
+		else if(nc == 1 && strcmp(cmd[0], "queued") == 0)
+			game.state = Ready;
+		break;
+	case Ready:
+		if(nc == 1 && strcmp(cmd[0], "layout") == 0){
 			game.state = Outlaying;
 			curship = &armada[0];
-		}else if(strcmp(cmd, "id") == 0)
-			chanprint(egress, "id %s\n", uid);
-		csetcursor(mctl, &patrolcursor);
+		}else if(nc == 2 && strcmp(cmd[0], "oid") == 0)
+			snprint(oid, sizeof oid, "%s", cmd[1]);
+		break;
+	case Watching:
+		/* <idx?> <uid> (hit|missed) <coord> */
+		/*
+		 * TODO can't use the id as the key because they can collide.
+		 */
 		break;
 	case Outlaying:
-		if(strcmp(cmd, "wait") == 0){
+		if(nc == 1 && strcmp(cmd[0], "wait") == 0){
 			game.state = Waiting;
 			csetcursor(mctl, &waitcursor);
-		}else if(strcmp(cmd, "play") == 0)
+		}else if(nc == 1 && strcmp(cmd[0], "play") == 0)
 			game.state = Playing;
-		else if(strncmp(cmd, "oid", 3) == 0)
-			snprint(oid, sizeof oid, "%s", cmd+4);
 		break;
 	case Playing:
-		if(strcmp(cmd, "wait") == 0){
+		if(nc == 1 && strcmp(cmd[0], "wait") == 0){
 			game.state = Waiting;
 			csetcursor(mctl, &waitcursor);
-		}else if(strcmp(cmd, "hit") == 0)
+		}else if(nc == 1 && strcmp(cmd[0], "hit") == 0)
 			settile(&alienboard, lastshot, Thit);
-		else if(strcmp(cmd, "miss") == 0)
+		else if(nc == 1 && strcmp(cmd[0], "miss") == 0)
 			settile(&alienboard, lastshot, Tmiss);
 		break;
 	case Waiting:
-		if(strcmp(cmd, "play") == 0){
+		if(nc == 1 && strcmp(cmd[0], "play") == 0){
 			game.state = Playing;
 			csetcursor(mctl, nil);
-		}else if(strncmp(cmd, "hit", 3) == 0){
-			cell = coords2cell(cmd+4);
+		}else if(nc == 2 && strcmp(cmd[0], "hit") == 0){
+			cell = coords2cell(cmd[1]);
 			for(i = 0; i < nelem(armada); i++)
 				if(ptinrect(fromboard(&localboard, cell), armada[i].bbox)){
 					cell = subpt2(cell, armada[i].p);
 					armada[i].hit[(int)vec2len(cell)] = 1;
 					break;
 				}
-		}else if(strncmp(cmd, "miss", 4) == 0){
-			cell = coords2cell(cmd+5);
+		}else if(nc == 2 && strcmp(cmd[0], "miss") == 0){
+			cell = coords2cell(cmd[1]);
 			settile(&localboard, cell, Tmiss);
 		}
 		break;
@@ -791,6 +834,7 @@ threadmain(int argc, char *argv[])
 	int fd;
 	Mousectl *mc;
 	Keyboardctl *kc;
+	Rune r;
 
 	GEOMfmtinstall();
 	ARGBEGIN{
@@ -848,20 +892,16 @@ threadmain(int argc, char *argv[])
 	threadcreate(netsendthread, &fd, mainstacksize);
 	nbsend(drawchan, nil);
 
-	Rune r;
-	enum {MOUSE, RESIZE, KEYS, DRAW, NONE};
+	enum { MOUSE, RESIZE, KEYS, DRAW, NONE };
 	Alt a[] = {
-	[MOUSE]  = {mc->c, &mc->Mouse, CHANRCV},
-	[RESIZE] = {mc->resizec, nil, CHANRCV},
-	[KEYS]   = {kc->c, &r, CHANRCV},
-	[DRAW]   = {drawchan, nil, CHANRCV},
-	[NONE]   = {nil, nil, CHANEND}
+	 [MOUSE]	{mc->c, &mc->Mouse, CHANRCV},
+	 [RESIZE]	{mc->resizec, nil, CHANRCV},
+	 [KEYS]		{kc->c, &r, CHANRCV},
+	 [DRAW]		{drawchan, nil, CHANRCV},
+	 [NONE]		{nil, nil, CHANEND}
 	};
-
 	for(;;)
 		switch(alt(a)){
-		default:
-			sysfatal("input thread interrupted");
 		case MOUSE:
 			mouse(mc);
 			break;
@@ -874,5 +914,7 @@ threadmain(int argc, char *argv[])
 		case DRAW:
 			redraw();
 			break;
+		default:
+			sysfatal("input thread interrupted");
 		}
 }

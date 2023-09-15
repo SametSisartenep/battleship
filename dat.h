@@ -49,7 +49,6 @@ struct Ship
 	int orient;
 	int ncells;
 	int *hit; /* |hit| = ncells and hitᵢ ∈ {0,1} */
-	int sunk;
 };
 
 struct Map
