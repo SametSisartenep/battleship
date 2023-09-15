@@ -195,8 +195,9 @@ void
 playerproc(void *arg)
 {
 	Player *my;
+	Match *m;
 	char *s, *cmd[2];
-	int nc;
+	int nc, mid;
 
 	my = arg;
 
@@ -219,82 +220,72 @@ playerproc(void *arg)
 		case NETIN:
 			if(debug)
 				fprint(2, "[%d] rcvd '%s'\n", getpid(), s);
+
 			if(my->name[0] == 0){
 				nc = tokenize(s, cmd, nelem(cmd));
 				if(nc == 2 && strcmp(cmd[0], "id") == 0 && strlen(cmd[1]) > 0)
 					snprint(my->name, sizeof my->name, "%s", cmd[1]);
 				else
 					chanprint(my->io.out, "id\n");
-				free(s);
 			}else
-				sendp(msgq, newmsg(my, s));
+				switch(my->state){
+				case Waiting0:
+					nc = tokenize(s, cmd, nelem(cmd));
+					if(nc == 1 && strcmp(cmd[0], "play") == 0)
+						sendp(playerq, my);
+					else if(nc == 1 && strcmp(cmd[0], "watch") == 0){
+						rlock(&theaterlk);
+						if(theater.next == &theater)
+							chanprint(my->io.out, "no matches\n");
+						else{
+							chanprint(my->io.out, "matches\n");
+							for(m = theater.next; m != &theater; m = m->next)
+								chanprint(my->io.out, "%d %s vs. %s\n", m->id, m->pl[0]->name, m->pl[1]->name);
+							chanprint(my->io.out, "end\n");
+						}
+						runlock(&theaterlk);
+					}else if(nc == 2 && strcmp(cmd[0], "watch") == 0){
+						mid = strtoul(cmd[1], nil, 10);
+						m = getmatch(mid);
+						if(m == nil)
+							chanprint(my->io.out, "no such match\n");
+						else
+							sendp(m->ctl, newmsg(my, estrdup("take seat")));
+					}
+					break;
+				case Watching:
+					nc = tokenize(s, cmd, nelem(cmd));
+					if(nc == 1 && strcmp(cmd[0], "leave") == 0)
+						sendp(my->battle->ctl, newmsg(my, estrdup("leave seat")));
+					break;
+				default:
+					if(my->battle != nil)
+						sendp(my->battle->data, newmsg(my, estrdup(s)));
+				}
+			free(s);
 			break;
 		case CTL:
-			if(s == nil) /* cable cut */
+			if(s == nil){ /* cable cut */
+				switch(my->state){
+				case Waiting0:
+					freeplayer(my);
+					break;
+				case Ready:
+					sendp(mmctl, newmsg(my, estrdup("player left")));
+					break;
+				default:
+					sendp(my->battle->ctl, newmsg(my, estrdup("player left")));
+				}
 				goto End;
+			}
 			free(s);
 			break;
 		}
 End:
 	if(debug)
 		fprint(2, "[%d] lost connection\n", getpid());
-	sendp(msgq, newmsg(my, nil));
 	threadkillgrp(threadgetgrp());
 	threadexits(nil);
-}
-
-void
-operator(void *)
-{
-	Msg *msg;
-	Match *m;
-	char *cmd[2];
-	int nc, mid;
-
-	threadsetname("operator");
-
-	while((msg = recvp(msgq)) != nil){
-		if(debug)
-			fprint(2, "operator got '%s' from p(fd=%d)\n", msg->body, msg->from->io.fd);
-
-		if(msg->body == nil){ /* player left */
-			if(msg->from->state != Waiting0)
-				sendp(mmctl, newmsg(msg->from, estrdup("player left")));
-			else
-				freeplayer(msg->from);
-		}else{
-			switch(msg->from->state){
-			case Waiting0:
-				nc = tokenize(msg->body, cmd, nelem(cmd));
-				if(nc == 1 && strcmp(cmd[0], "play") == 0)
-					sendp(playerq, msg->from);
-				else if(nc == 1 && strcmp(cmd[0], "watch") == 0){
-					if(theater.next == &theater)
-						chanprint(msg->from->io.out, "no matches\n");
-					else for(m = theater.next; m != &theater; m = m->next)
-						chanprint(msg->from->io.out, "%d %s vs. %s\n", m->id, m->pl[0]->name, m->pl[1]->name);
-				}else if(nc == 2 && strcmp(cmd[0], "watch") == 0){
-					mid = strtoul(cmd[1], nil, 10);
-					m = getmatch(mid);
-					if(m == nil)
-						chanprint(msg->from->io.out, "no such match\n");
-					else
-						sendp(m->ctl, newmsg(msg->from, estrdup("take seat")));
-				}
-				break;
-			case Watching:
-				nc = tokenize(msg->body, cmd, nelem(cmd));
-				if(nc == 1 && strcmp(cmd[0], "leave") == 0)
-					sendp(msg->from->battle->ctl, newmsg(msg->from, estrdup("leave seat")));
-				break;
-			default:
-				if(msg->from->battle != nil)
-					sendp(msg->from->battle->data, newmsg(msg->from, estrdup(msg->body)));
-			}
-		}
-		freemsg(msg);
-	}
-	threadexitsall("operator was KIA");
 }
 
 void
@@ -508,10 +499,12 @@ fprintmatches(int fd)
 	int n;
 
 	n = 0;
+	rlock(&theaterlk);
 	if(theater.next == &theater)
 		n += fprint(fd, "let there be peace\n");
 	else for(n = 0, m = theater.next; m != &theater; m = m->next)
 		n += fprint(fd, "%d\t%s vs. %s\n", m->id, m->pl[0]->name, m->pl[1]->name);
+	runlock(&theaterlk);
 	return n;
 }
 
@@ -644,6 +637,5 @@ threadmain(int argc, char *argv[])
 	theater.next = theater.prev = &theater;
 	proccreate(c2proc, nil, mainstacksize);
 	proccreate(matchmaker, nil, mainstacksize);
-	proccreate(operator, nil, mainstacksize);
 	dolisten(addr);
 }
