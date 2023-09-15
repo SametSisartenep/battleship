@@ -664,6 +664,12 @@ mouse(Mousectl *mc)
 void
 key(Rune r)
 {
+	if(conclusion.s != nil){
+		resetgame();
+		nbsend(drawchan, nil);
+		return;
+	}
+
 	switch(r){
 	case Kdel:
 	case 'q':
@@ -677,11 +683,7 @@ key(Rune r)
 		if(game.state != Waiting0)
 			break;
 		chanprint(egress, "watch\n");
-	default:
-		if(conclusion.s != nil){
-			resetgame();
-			nbsend(drawchan, nil);
-		}
+		break;
 	}
 }
 
