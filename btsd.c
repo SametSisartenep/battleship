@@ -11,7 +11,6 @@
 int debug;
 
 Channel *playerq;
-Channel *msgq;
 Channel *mmctl; /* matchmaker's */
 Match theater;
 RWLock theaterlk;
@@ -632,7 +631,6 @@ threadmain(int argc, char *argv[])
 		usage();
 
 	playerq = chancreate(sizeof(Player*), 8);
-	msgq = chancreate(sizeof(Msg*), 8);
 	mmctl = chancreate(sizeof(Msg*), 8);
 	theater.next = theater.prev = &theater;
 	proccreate(c2proc, nil, mainstacksize);
