@@ -195,8 +195,8 @@ playerproc(void *arg)
 {
 	Player *my;
 	Match *m;
-	char *s, *cmd[2];
-	int nc, mid;
+	char *s, *f[2];
+	int nf, mid;
 
 	my = arg;
 
@@ -221,18 +221,18 @@ playerproc(void *arg)
 				fprint(2, "[%d] rcvd '%s'\n", getpid(), s);
 
 			if(my->name[0] == 0){
-				nc = tokenize(s, cmd, nelem(cmd));
-				if(nc == 2 && strcmp(cmd[0], "id") == 0 && strlen(cmd[1]) > 0)
-					snprint(my->name, sizeof my->name, "%s", cmd[1]);
+				nf = tokenize(s, f, nelem(f));
+				if(nf == 2 && strcmp(f[0], "id") == 0 && strlen(f[1]) > 0)
+					snprint(my->name, sizeof my->name, "%s", f[1]);
 				else
 					chanprint(my->io.out, "id\n");
 			}else
 				switch(my->state){
 				case Waiting0:
-					nc = tokenize(s, cmd, nelem(cmd));
-					if(nc == 1 && strcmp(cmd[0], "play") == 0)
+					nf = tokenize(s, f, nelem(f));
+					if(nf == 1 && strcmp(f[0], "play") == 0)
 						sendp(playerq, my);
-					else if(nc == 1 && strcmp(cmd[0], "watch") == 0){
+					else if(nf == 1 && strcmp(f[0], "watch") == 0){
 						rlock(&theaterlk);
 						if(theater.next == &theater)
 							chanprint(my->io.out, "no matches\n");
@@ -243,8 +243,8 @@ playerproc(void *arg)
 							chanprint(my->io.out, "end\n");
 						}
 						runlock(&theaterlk);
-					}else if(nc == 2 && strcmp(cmd[0], "watch") == 0){
-						mid = strtoul(cmd[1], nil, 10);
+					}else if(nf == 2 && strcmp(f[0], "watch") == 0){
+						mid = strtoul(f[1], nil, 10);
 						m = getmatch(mid);
 						if(m == nil)
 							chanprint(my->io.out, "no such match\n");
@@ -253,8 +253,8 @@ playerproc(void *arg)
 					}
 					break;
 				case Watching:
-					nc = tokenize(s, cmd, nelem(cmd));
-					if(nc == 1 && strcmp(cmd[0], "leave") == 0)
+					nf = tokenize(s, f, nelem(f));
+					if(nf == 1 && strcmp(f[0], "leave") == 0)
 						sendp(my->battle->ctl, newmsg(my, estrdup("leave seat")));
 					break;
 				default:
@@ -294,9 +294,9 @@ battleproc(void *arg)
 	Match *m;
 	Player *p, *op;
 	Stands stands;
-	char *cmd[2];
+	char *f[2];
 	uint n0;
-	int nc;
+	int nf;
 
 	Point2 cell;
 	char *coords[5];
@@ -328,12 +328,12 @@ battleproc(void *arg)
 			p = msg->from;
 			op = p == m->pl[0]? m->pl[1]: m->pl[0];
 
-			nc = tokenize(msg->body, cmd, nelem(cmd));
+			nf = tokenize(msg->body, f, nelem(f));
 
 			switch(p->state){
 			case Outlaying:
-				if(nc == 2 && strcmp(cmd[0], "layout") == 0)
-					if(gettokens(cmd[1], coords, nelem(coords), ",") == nelem(coords)){
+				if(nf == 2 && strcmp(f[0], "layout") == 0)
+					if(gettokens(f[1], coords, nelem(coords), ",") == nelem(coords)){
 						if(debug)
 							fprint(2, "rcvd layout from %s @ %s\n", p->name, p->nci->raddr);
 						for(i = 0; i < nelem(coords); i++){
@@ -359,8 +359,8 @@ battleproc(void *arg)
 					}
 				break;
 			case Playing:
-				if(nc == 2 && strcmp(cmd[0], "shoot") == 0){
-					cell = coords2cell(cmd[1]);
+				if(nf == 2 && strcmp(f[0], "shoot") == 0){
+					cell = coords2cell(f[1]);
 					switch(gettile(op, cell)){
 					case Tship:
 						settile(op, cell, Thit);
@@ -539,8 +539,8 @@ fprintmatch(int fd, Match *m)
 void
 c2proc(void *)
 {
-	char buf[256], *user, *cmd[3];
-	int fd, pfd[2], n, nc, mid;
+	char buf[256], *user, *f[3];
+	int fd, pfd[2], n, nf, mid;
 
 	threadsetname("c2proc");
 
@@ -560,18 +560,18 @@ c2proc(void *)
 	while((n = read(pfd[1], buf, sizeof(buf)-1)) > 0){
 		buf[n] = 0;
 
-		nc = tokenize(buf, cmd, nelem(cmd));
-		if((nc == 2 || nc == 3) && strcmp(cmd[0], "show") == 0){
-			if(nc == 2 && strcmp(cmd[1], "matches") == 0)
+		nf = tokenize(buf, f, nelem(f));
+		if((nf == 2 || nf == 3) && strcmp(f[0], "show") == 0){
+			if(nf == 2 && strcmp(f[1], "matches") == 0)
 				fprintmatches(pfd[1]);
-			else if(nc == 3 && strcmp(cmd[1], "match") == 0){
-				mid = strtoul(cmd[2], nil, 10);
+			else if(nf == 3 && strcmp(f[1], "match") == 0){
+				mid = strtoul(f[2], nil, 10);
 				fprintmatch(pfd[1], getmatch(mid));
 			}
-		}else if(nc == 2 && strcmp(cmd[0], "debug") == 0){
-			if(strcmp(cmd[1], "on") == 0)
+		}else if(nf == 2 && strcmp(f[0], "debug") == 0){
+			if(strcmp(f[1], "on") == 0)
 				debug = 1;
-			else if(strcmp(cmd[1], "off") == 0)
+			else if(strcmp(f[1], "off") == 0)
 				debug = 0;
 		}
 	}
