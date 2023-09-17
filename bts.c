@@ -80,11 +80,11 @@ Ship armada[NSHIPS];
 Ship *curship;
 int layoutdone;
 Point2 lastshot;
+Matchlist matchlist;
 
 struct {
 	int state;
 } game;
-
 struct {
 	Image *c; /* color */
 	char *s; /* banner text */
@@ -120,6 +120,29 @@ toboard(Board *b, Point p)
 	np.x = (int)np.x;
 	np.y = (int)np.y;
 	return np;
+}
+
+void
+addmatch(Mlist *m, int id, char *title)
+{
+	m->entries = erealloc(m->entries, ++m->nentries * sizeof *m->entries);
+	m->entries[m->nentries-1] = (Mentry){id, title};
+}
+
+void
+freematchlist(Mlist *m)
+{
+	int i;
+
+	if(m->entries == nil)
+		return;
+
+	for(i = 0; i < m->nentries; i++)
+		free(m->entries[i].title);
+	free(m->entries);
+	m->entries = nil;
+	m->nentries = 0;
+	m->filling = 0;
 }
 
 int
@@ -222,11 +245,8 @@ drawship(Image *dst, Ship *s)
 		return;
 
 	p = s->p;
-	switch(s->orient){
-	case OH: sv = Vec2(1,0); break;
-	case OV: sv = Vec2(0,1); break;
-	default: return;
-	}
+	assert(s->orient == OH || s->orient == OV);
+	sv = s->orient == OH? Vec2(1,0): Vec2(0,1);
 
 	for(i = 0; i < s->ncells; i++){
 		drawtile(dst, &localboard, p, s->hit[i]? Thit: Tship);
@@ -267,6 +287,52 @@ drawgameoptions(Image *dst)
 	static char s[] = "press p to play, w to watch";
 
 	string(dst, Pt(SCRW/2 - stringwidth(font, s)/2, 10*font->height+5), display->white, ZP, font, s);
+}
+
+void
+drawmatchlist(Image *dst)
+{
+	Rectangle r, scrollr;
+	static char title[] = "ongoing matches";
+	static char nomatches[] = "no matches";
+	int i;
+
+	USED(scrollr);
+
+	if(debug){
+		fprint(2, "matchlist entries %p nentries %d filling %d\n", matchlist.entries, matchlist.nentries, matchlist.filling);
+		for(i = 0; i < matchlist.nentries; i++)
+			fprint(2, "match id %d title %s\n", matchlist.entries[i].id, matchlist.entries[i].title);
+	}
+
+	if(matchlist.filling)
+		return;
+
+	enum {
+		Vspace = 2,
+		Scrollwidth = 10,
+		Maxvisitems = 5,
+	};
+	r.min = Pt(SCRW/2 - stringwidth(font, title)/2, 14*font->height);
+	r.max = addpt(r.min, Pt(stringwidth(font, title), font->height+Vspace));
+	for(i = 0; i < matchlist.nentries; i++)
+		if(stringwidth(font, matchlist.entries[i].title) > Dx(r))
+			r.max.x = r.min.x + stringwidth(font, matchlist.entries[i].title);
+
+	draw(dst, r, display->white, nil, ZP);
+	string(dst, r.min, display->black, ZP, font, title);
+	for(i = 0; i < matchlist.nentries; i++){
+		r.min.y += font->height+Vspace;
+		r.max.y = r.min.y + font->height+Vspace;
+		draw(dst, r, display->white, nil, ZP);
+		string(dst, r.min, display->black, ZP, font, matchlist.entries[i].title);
+	}
+	if(i == 0){
+		r.min.y += font->height+Vspace;
+		r.max.y = r.min.y + font->height+Vspace;
+		draw(dst, r, display->white, nil, ZP);
+		string(dst, r.min, display->black, ZP, font, nomatches);
+	}
 }
 
 void
@@ -339,6 +405,7 @@ redraw(void)
 	case Waiting0:
 		drawtitle(screenb);
 		drawgameoptions(screenb);
+		drawmatchlist(screenb);
 		break;
 	default:
 		drawboard(screenb, &alienboard);
@@ -577,7 +644,7 @@ rmb(Mousectl *mc)
 		DONE,
 	};
 	static char *items[] = {
-	 [PLACESHIP]	"place ships",
+	 [PLACESHIP]	"relocate ships",
 	 [DONE]		"done",
 		nil
 	};
@@ -712,37 +779,47 @@ keelhaul(void)
 }
 
 void
-processcmd(char *s)
+processcmd(char *cmd)
 {
 	Point2 cell;
-	char *cmd[2];
-	int i, nc;
+	char *f[3];
+	int i, nf;
 
 	if(debug)
-		fprint(2, "rcvd '%s'\n", s);
+		fprint(2, "rcvd '%s'\n", cmd);
 
-	nc = tokenize(s, cmd, nelem(cmd));
-	if(nc < 1)
+	nf = tokenize(cmd, f, nelem(f));
+	if(nf < 1)
 		return;
 
-	if(nc == 1 && strcmp(cmd[0], "win") == 0)
+	if(nf == 1 && strcmp(f[0], "win") == 0)
 		celebrate();
-	else if(nc == 1 && strcmp(cmd[0], "lose") == 0)
+	else if(nf == 1 && strcmp(f[0], "lose") == 0)
 		keelhaul();
 
 	switch(game.state){
 	case Waiting0:
-		if(nc == 1 && strcmp(cmd[0], "id") == 0)
+		if(nf == 1 && strcmp(f[0], "id") == 0)
 			chanprint(egress, "id %s\n", uid);
-		else if(nc == 1 && strcmp(cmd[0], "queued") == 0)
+		else if(nf == 1 && strcmp(f[0], "queued") == 0)
 			game.state = Ready;
+		else if(!matchlist.filling && nf == 1 && strcmp(f[0], "matches") == 0){
+			if(matchlist.nentries > 0)
+				freematchlist(&matchlist);
+			matchlist.filling++;
+		}else if(matchlist.filling && nf == 3)
+			addmatch(&matchlist, strtoul(f[0], nil, 10), smprint("%s vs %s", f[1], f[2]));
+		else if(matchlist.filling && nf == 1 && strcmp(f[0], "end") == 0)
+			matchlist.filling--;
+		else if(nf == 2 && strcmp(f[0], "no") == 0 && strcmp(f[1], "matches") == 0)
+			freematchlist(&matchlist);
 		break;
 	case Ready:
-		if(nc == 1 && strcmp(cmd[0], "layout") == 0){
+		if(nf == 1 && strcmp(f[0], "layout") == 0){
 			game.state = Outlaying;
 			curship = &armada[0];
-		}else if(nc == 2 && strcmp(cmd[0], "oid") == 0)
-			snprint(oid, sizeof oid, "%s", cmd[1]);
+		}else if(nf == 2 && strcmp(f[0], "oid") == 0)
+			snprint(oid, sizeof oid, "%s", f[1]);
 		break;
 	case Watching:
 		/* <idx?> <uid> (hit|missed) <coord> */
@@ -751,35 +828,35 @@ processcmd(char *s)
 		 */
 		break;
 	case Outlaying:
-		if(nc == 1 && strcmp(cmd[0], "wait") == 0){
+		if(nf == 1 && strcmp(f[0], "wait") == 0){
 			game.state = Waiting;
 			csetcursor(mctl, &waitcursor);
-		}else if(nc == 1 && strcmp(cmd[0], "play") == 0)
+		}else if(nf == 1 && strcmp(f[0], "play") == 0)
 			game.state = Playing;
 		break;
 	case Playing:
-		if(nc == 1 && strcmp(cmd[0], "wait") == 0){
+		if(nf == 1 && strcmp(f[0], "wait") == 0){
 			game.state = Waiting;
 			csetcursor(mctl, &waitcursor);
-		}else if(nc == 1 && strcmp(cmd[0], "hit") == 0)
+		}else if(nf == 1 && strcmp(f[0], "hit") == 0)
 			settile(&alienboard, lastshot, Thit);
-		else if(nc == 1 && strcmp(cmd[0], "miss") == 0)
+		else if(nf == 1 && strcmp(f[0], "miss") == 0)
 			settile(&alienboard, lastshot, Tmiss);
 		break;
 	case Waiting:
-		if(nc == 1 && strcmp(cmd[0], "play") == 0){
+		if(nf == 1 && strcmp(f[0], "play") == 0){
 			game.state = Playing;
 			csetcursor(mctl, nil);
-		}else if(nc == 2 && strcmp(cmd[0], "hit") == 0){
-			cell = coords2cell(cmd[1]);
+		}else if(nf == 2 && strcmp(f[0], "hit") == 0){
+			cell = coords2cell(f[1]);
 			for(i = 0; i < nelem(armada); i++)
 				if(ptinrect(fromboard(&localboard, cell), armada[i].bbox)){
 					cell = subpt2(cell, armada[i].p);
 					armada[i].hit[(int)vec2len(cell)] = 1;
 					break;
 				}
-		}else if(nc == 2 && strcmp(cmd[0], "miss") == 0){
-			cell = coords2cell(cmd[1]);
+		}else if(nf == 2 && strcmp(f[0], "miss") == 0){
+			cell = coords2cell(f[1]);
 			settile(&localboard, cell, Tmiss);
 		}
 		break;

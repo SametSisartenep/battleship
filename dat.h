@@ -44,11 +44,11 @@ typedef struct Stands Stands;
 
 struct Ship
 {
-	Point2 p; /* board cell */
+	Point2 p;	/* board cell */
 	Rectangle bbox;
 	int orient;
 	int ncells;
-	int *hit; /* |hit| = ncells and hitᵢ ∈ {0,1} */
+	int *hit;	/* |hit| = ncells and hitᵢ ∈ {0,1} */
 };
 
 struct Map
@@ -104,4 +104,27 @@ struct Stands
 	Player **seats;
 	ulong nused;
 	ulong cap;
+};
+
+typedef struct Mentry Mentry;
+typedef struct Mlist Mlist;
+typedef struct Matchlist Matchlist;
+
+struct Mentry
+{
+	int id;
+	char *title;
+};
+
+struct Mlist
+{
+	Mentry *entries;
+	int nentries;
+	int filling;
+};
+
+struct Matchlist
+{
+	Mlist;
+	int selected;	/* [-1,nitems) where -1 is none */
 };

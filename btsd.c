@@ -239,7 +239,7 @@ playerproc(void *arg)
 						else{
 							chanprint(my->io.out, "matches\n");
 							for(m = theater.next; m != &theater; m = m->next)
-								chanprint(my->io.out, "%d %s vs. %s\n", m->id, m->pl[0]->name, m->pl[1]->name);
+								chanprint(my->io.out, "%d %s %s\n", m->id, m->pl[0]->name, m->pl[1]->name);
 							chanprint(my->io.out, "end\n");
 						}
 						runlock(&theaterlk);
@@ -502,7 +502,7 @@ fprintmatches(int fd)
 	if(theater.next == &theater)
 		n += fprint(fd, "let there be peace\n");
 	else for(n = 0, m = theater.next; m != &theater; m = m->next)
-		n += fprint(fd, "%d\t%s vs. %s\n", m->id, m->pl[0]->name, m->pl[1]->name);
+		n += fprint(fd, "%d\t%s vs %s\n", m->id, m->pl[0]->name, m->pl[1]->name);
 	runlock(&theaterlk);
 	return n;
 }
