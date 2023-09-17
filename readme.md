@@ -6,13 +6,13 @@ An on-line multi-player implementation of Battleship (a.k.a. Sink the Fleet).
 
 Join a server
 
-	% bts antares-labs.eu
+	% games/bts arcade.antares-labs.eu
 
 Then wait for another player to show up (admire the velero).  When
 they do, you'll have to place your ships in the lower (local) board by
 clicking LMB when the ship is at the right location; you can also
 change the orientation of the ship by pressing MMB.  If you are not
-happy with the current layout, press RMB and select “place ships” to
+happy with the current layout, press RMB and select “relocate ships” to
 start all over again (tip: if you don't want to move a ship, click LMB
 without moving the mouse.) Once you are done—a banner at the bottom
 will inform you—, press RMB and choose “done”.
