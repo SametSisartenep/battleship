@@ -141,3 +141,9 @@ statename(int state)
 		return nil;
 	return statenametab[state];
 }
+
+int
+max(int a, int b)
+{
+	return a > b? a: b;
+}

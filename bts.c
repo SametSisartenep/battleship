@@ -80,7 +80,7 @@ Ship armada[NSHIPS];
 Ship *curship;
 int layoutdone;
 Point2 lastshot;
-Matchlist matchlist;
+Menulist *matches;
 
 struct {
 	int state;
@@ -120,29 +120,6 @@ toboard(Board *b, Point p)
 	np.x = (int)np.x;
 	np.y = (int)np.y;
 	return np;
-}
-
-void
-addmatch(Mlist *m, int id, char *title)
-{
-	m->entries = erealloc(m->entries, ++m->nentries * sizeof *m->entries);
-	m->entries[m->nentries-1] = (Mentry){id, title};
-}
-
-void
-freematchlist(Mlist *m)
-{
-	int i;
-
-	if(m->entries == nil)
-		return;
-
-	for(i = 0; i < m->nentries; i++)
-		free(m->entries[i].title);
-	free(m->entries);
-	m->entries = nil;
-	m->nentries = 0;
-	m->filling = 0;
 }
 
 int
@@ -290,52 +267,6 @@ drawgameoptions(Image *dst)
 }
 
 void
-drawmatchlist(Image *dst)
-{
-	Rectangle r, scrollr;
-	static char title[] = "ongoing matches";
-	static char nomatches[] = "no matches";
-	int i;
-
-	USED(scrollr);
-
-	if(debug){
-		fprint(2, "matchlist entries %p nentries %d filling %d\n", matchlist.entries, matchlist.nentries, matchlist.filling);
-		for(i = 0; i < matchlist.nentries; i++)
-			fprint(2, "match id %d title %s\n", matchlist.entries[i].id, matchlist.entries[i].title);
-	}
-
-	if(matchlist.filling)
-		return;
-
-	enum {
-		Vspace = 2,
-		Scrollwidth = 10,
-		Maxvisitems = 5,
-	};
-	r.min = Pt(SCRW/2 - stringwidth(font, title)/2, 14*font->height);
-	r.max = addpt(r.min, Pt(stringwidth(font, title), font->height+Vspace));
-	for(i = 0; i < matchlist.nentries; i++)
-		if(stringwidth(font, matchlist.entries[i].title) > Dx(r))
-			r.max.x = r.min.x + stringwidth(font, matchlist.entries[i].title);
-
-	draw(dst, r, display->white, nil, ZP);
-	string(dst, r.min, display->black, ZP, font, title);
-	for(i = 0; i < matchlist.nentries; i++){
-		r.min.y += font->height+Vspace;
-		r.max.y = r.min.y + font->height+Vspace;
-		draw(dst, r, display->white, nil, ZP);
-		string(dst, r.min, display->black, ZP, font, matchlist.entries[i].title);
-	}
-	if(i == 0){
-		r.min.y += font->height+Vspace;
-		r.max.y = r.min.y + font->height+Vspace;
-		draw(dst, r, display->white, nil, ZP);
-		string(dst, r.min, display->black, ZP, font, nomatches);
-	}
-}
-
-void
 drawinfo(Image *dst)
 {
 	static Image *c;
@@ -405,7 +336,7 @@ redraw(void)
 	case Waiting0:
 		drawtitle(screenb);
 		drawgameoptions(screenb);
-		drawmatchlist(screenb);
+		matches->draw(matches, screenb);
 		break;
 	default:
 		drawboard(screenb, &alienboard);
@@ -803,16 +734,13 @@ processcmd(char *cmd)
 			chanprint(egress, "id %s\n", uid);
 		else if(nf == 1 && strcmp(f[0], "queued") == 0)
 			game.state = Ready;
-		else if(!matchlist.filling && nf == 1 && strcmp(f[0], "matches") == 0){
-			if(matchlist.nentries > 0)
-				freematchlist(&matchlist);
-			matchlist.filling++;
-		}else if(matchlist.filling && nf == 3)
-			addmatch(&matchlist, strtoul(f[0], nil, 10), smprint("%s vs %s", f[1], f[2]));
-		else if(matchlist.filling && nf == 1 && strcmp(f[0], "end") == 0)
-			matchlist.filling--;
-		else if(nf == 2 && strcmp(f[0], "no") == 0 && strcmp(f[1], "matches") == 0)
-			freematchlist(&matchlist);
+		else if(!matches->filling && nf == 1 && strcmp(f[0], "matches") == 0){
+			matches->clear(matches);
+			matches->filling = 1;
+		}else if(matches->filling && nf == 3)
+			matches->add(matches, strtoul(f[0], nil, 10), smprint("%s vs %s", f[1], f[2]));
+		else if(matches->filling && nf == 1 && strcmp(f[0], "end") == 0)
+			matches->filling = 0;
 		break;
 	case Ready:
 		if(nf == 1 && strcmp(f[0], "layout") == 0){
@@ -976,6 +904,7 @@ threadmain(int argc, char *argv[])
 	inittiles();
 	initboards();
 	initarmada();
+	matches = newmenulist(14*font->height, "ongoing matches");
 	game.state = Waiting0;
 	csetcursor(mctl, &patrolcursor);
 

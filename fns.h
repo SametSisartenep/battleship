@@ -21,3 +21,10 @@ int countshipcells(Map*);
 int shiplen(int);
 char *shipname(int);
 char *statename(int);
+int max(int, int);
+
+/*
+ * menulist
+ */
+Menulist *newmenulist(int, char*);
+void delmenulist(Menulist*);

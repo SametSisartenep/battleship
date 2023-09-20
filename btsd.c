@@ -234,14 +234,10 @@ playerproc(void *arg)
 						sendp(playerq, my);
 					else if(nf == 1 && strcmp(f[0], "watch") == 0){
 						rlock(&theaterlk);
-						if(theater.next == &theater)
-							chanprint(my->io.out, "no matches\n");
-						else{
-							chanprint(my->io.out, "matches\n");
-							for(m = theater.next; m != &theater; m = m->next)
-								chanprint(my->io.out, "%d %s %s\n", m->id, m->pl[0]->name, m->pl[1]->name);
-							chanprint(my->io.out, "end\n");
-						}
+						chanprint(my->io.out, "matches\n");
+						for(m = theater.next; m != &theater; m = m->next)
+							chanprint(my->io.out, "%d %s %s\n", m->id, m->pl[0]->name, m->pl[1]->name);
+						chanprint(my->io.out, "end\n");
 						runlock(&theaterlk);
 					}else if(nf == 2 && strcmp(f[0], "watch") == 0){
 						mid = strtoul(f[1], nil, 10);

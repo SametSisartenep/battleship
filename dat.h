@@ -108,7 +108,7 @@ struct Stands
 
 typedef struct Mentry Mentry;
 typedef struct Mlist Mlist;
-typedef struct Matchlist Matchlist;
+typedef struct Menulist Menulist;
 
 struct Mentry
 {
@@ -123,8 +123,15 @@ struct Mlist
 	int filling;
 };
 
-struct Matchlist
+struct Menulist
 {
 	Mlist;
-	int selected;	/* [-1,nitems) where -1 is none */
+	char *title;
+	Rectangle r, sr;	/* content and scroll rects */
+	int high;		/* [-1,nitems) where -1 is none */
+
+	void (*add)(Menulist*, int, char*);
+	void (*clear)(Menulist*);
+	void (*update)(Menulist*, Mousectl*);
+	void (*draw)(Menulist*, Image*);
 };

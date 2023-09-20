@@ -9,6 +9,7 @@ TARG=\
 OFILES=\
 	alloc.$O\
 	util.$O\
+	menulist.$O\
 
 HFILES=\
 	dat.h\
