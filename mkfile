@@ -8,6 +8,7 @@ TARG=\
 
 OFILES=\
 	alloc.$O\
+	parse.$O\
 	util.$O\
 	menulist.$O\
 

@@ -8,6 +8,25 @@
 #include "dat.h"
 #include "fns.h"
 
+enum {
+	CMid,
+	CMplay,
+	CMlayout,
+	CMshoot,
+	CMgetmatches,
+	CMwatch,
+	CMleave,
+};
+Cmdtab clcmd[] = {
+	CMid,		"id",		2,
+	CMplay, 	"play",		1,
+	CMlayout, 	"layout",	2,
+	CMshoot, 	"shoot",	2,
+	CMgetmatches,	"watch",	1,
+	CMwatch,	"watch",	2,
+	CMleave,	"leave",	1,
+};
+
 int debug;
 
 Channel *playerq;
@@ -195,8 +214,10 @@ playerproc(void *arg)
 {
 	Player *my;
 	Match *m;
-	char *s, *f[2];
-	int nf, mid;
+	Cmdbuf *cb;
+	Cmdtab *ct;
+	char *s;
+	int mid;
 
 	my = arg;
 
@@ -220,27 +241,30 @@ playerproc(void *arg)
 			if(debug)
 				fprint(2, "[%d] rcvd '%s'\n", getpid(), s);
 
+			cb = parsecmd(s, strlen(s));
+			ct = lookupcmd(cb, clcmd, nelem(clcmd));
+			if(ct == nil)
+				goto Nocmd;
+
 			if(my->name[0] == 0){
-				nf = tokenize(s, f, nelem(f));
-				if(nf == 2 && strcmp(f[0], "id") == 0 && strlen(f[1]) > 0)
-					snprint(my->name, sizeof my->name, "%s", f[1]);
+				if(ct->index == CMid && strlen(cb->f[1]) > 0)
+					snprint(my->name, sizeof my->name, "%s", cb->f[1]);
 				else
 					chanprint(my->io.out, "id\n");
 			}else
 				switch(my->state){
 				case Waiting0:
-					nf = tokenize(s, f, nelem(f));
-					if(nf == 1 && strcmp(f[0], "play") == 0)
+					if(ct->index == CMplay)
 						sendp(playerq, my);
-					else if(nf == 1 && strcmp(f[0], "watch") == 0){
+					else if(ct->index == CMgetmatches){
 						rlock(&theaterlk);
 						chanprint(my->io.out, "matches\n");
 						for(m = theater.next; m != &theater; m = m->next)
-							chanprint(my->io.out, "%d %s %s\n", m->id, m->pl[0]->name, m->pl[1]->name);
+							chanprint(my->io.out, "m %d %s %s\n", m->id, m->pl[0]->name, m->pl[1]->name);
 						chanprint(my->io.out, "end\n");
 						runlock(&theaterlk);
-					}else if(nf == 2 && strcmp(f[0], "watch") == 0){
-						mid = strtoul(f[1], nil, 10);
+					}else if(ct->index == CMwatch){
+						mid = strtoul(cb->f[1], nil, 10);
 						m = getmatch(mid);
 						if(m == nil)
 							chanprint(my->io.out, "no such match\n");
@@ -249,14 +273,15 @@ playerproc(void *arg)
 					}
 					break;
 				case Watching:
-					nf = tokenize(s, f, nelem(f));
-					if(nf == 1 && strcmp(f[0], "leave") == 0)
+					if(ct->index == CMleave)
 						sendp(my->battle->ctl, newmsg(my, estrdup("leave seat")));
 					break;
 				default:
 					if(my->battle != nil)
 						sendp(my->battle->data, newmsg(my, estrdup(s)));
 				}
+Nocmd:
+			free(cb);
 			free(s);
 			break;
 		case CTL:
@@ -288,11 +313,11 @@ battleproc(void *arg)
 {
 	Msg *msg;
 	Match *m;
+	Cmdbuf *cb;
+	Cmdtab *ct;
 	Player *p, *op;
 	Stands stands;
-	char *f[2];
 	uint n0;
-	int nf;
 
 	Point2 cell;
 	char *coords[5];
@@ -324,12 +349,15 @@ battleproc(void *arg)
 			p = msg->from;
 			op = p == m->pl[0]? m->pl[1]: m->pl[0];
 
-			nf = tokenize(msg->body, f, nelem(f));
+			cb = parsecmd(msg->body, strlen(msg->body));
+			ct = lookupcmd(cb, clcmd, nelem(clcmd));
+			if(ct == nil)
+				goto Nocmd;
 
 			switch(p->state){
 			case Outlaying:
-				if(nf == 2 && strcmp(f[0], "layout") == 0)
-					if(gettokens(f[1], coords, nelem(coords), ",") == nelem(coords)){
+				if(ct->index == CMlayout)
+					if(gettokens(cb->f[1], coords, nelem(coords), ",") == nelem(coords)){
 						if(debug)
 							fprint(2, "rcvd layout from %s @ %s\n", p->name, p->nci->raddr);
 						for(i = 0; i < nelem(coords); i++){
@@ -355,8 +383,8 @@ battleproc(void *arg)
 					}
 				break;
 			case Playing:
-				if(nf == 2 && strcmp(f[0], "shoot") == 0){
-					cell = coords2cell(f[1]);
+				if(ct->index == CMshoot){
+					cell = coords2cell(cb->f[1]);
 					switch(gettile(op, cell)){
 					case Tship:
 						settile(op, cell, Thit);
@@ -389,7 +417,8 @@ Swapturn:
 				}
 				break;
 			}
-
+Nocmd:
+			free(cb);
 			freemsg(msg);
 			break;
 		case CTL:

@@ -129,9 +129,30 @@ struct Menulist
 	char *title;
 	Rectangle r, sr;	/* content and scroll rects */
 	int high;		/* [-1,nitems) where -1 is none */
+	int off;		/* entry offset ∈ [0, nitems-Maxvisitems] */
 
 	void (*add)(Menulist*, int, char*);
 	void (*clear)(Menulist*);
-	void (*update)(Menulist*, Mousectl*);
+	int (*update)(Menulist*, Mousectl*, Channel*);
 	void (*draw)(Menulist*, Image*);
+};
+
+/*
+ * Kernel-style command parser
+ */
+typedef struct Cmdbuf Cmdbuf;
+typedef struct Cmdtab Cmdtab;
+
+struct Cmdbuf
+{
+	char	*buf;
+	char	**f;
+	int	nf;
+};
+
+struct Cmdtab
+{
+	int	index;	/* used by client to switch on result */
+	char	*cmd;	/* command name */
+	int	narg;	/* expected #args; 0 ==> variadic */
 };

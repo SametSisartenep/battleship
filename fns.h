@@ -22,9 +22,16 @@ int shiplen(int);
 char *shipname(int);
 char *statename(int);
 int max(int, int);
+int min(int, int);
 
 /*
  * menulist
  */
 Menulist *newmenulist(int, char*);
 void delmenulist(Menulist*);
+
+/*
+ * parse
+ */
+Cmdbuf *parsecmd(char*, int);
+Cmdtab *lookupcmd(Cmdbuf*, Cmdtab*, int);
