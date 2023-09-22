@@ -9,6 +9,41 @@
 #include "dat.h"
 #include "fns.h"
 
+enum {
+	CMid,
+	CMqueued,
+	CMlayout,
+	CMoid,
+	CMwait,
+	CMplay,
+	CMwehit,
+	CMwemiss,
+	CMtheyhit,
+	CMtheymiss,
+	CMmatchesb,	/* list header */
+	CMmatch,	/* list entry */
+	CMmatchese,	/* list tail */
+	CMwin,
+	CMlose,
+};
+Cmdtab svcmd[] = {
+	CMid,		"id",		1,
+	CMqueued,	"queued",	1,
+	CMlayout, 	"layout",	1,
+	CMoid, 		"oid",		2,
+	CMwait, 	"wait",		1,
+	CMplay,		"play",		1,
+	CMwehit,	"hit",		1,
+	CMwemiss,	"miss",		1,
+	CMtheyhit, 	"hit",		2,
+	CMtheymiss,	"miss",		2,
+	CMmatchesb,	"matches",	1,
+	CMmatch,	"m",		4,
+	CMmatchese,	"end",		1,
+	CMwin,		"win",		1,
+	CMlose,		"lose",		1,
+};
+
 int debug;
 
 Cursor patrolcursor = {
@@ -174,7 +209,7 @@ resetgame(void)
 	oid[0] = 0;
 	game.state = Waiting0;
 	conclusion.s = nil;
-	csetcursor(mctl, &patrolcursor);
+	csetcursor(mctl, nil);
 }
 
 Point
@@ -498,36 +533,33 @@ confirmdone(Mousectl *mc)
 void
 lmb(Mousectl *mc)
 {
-	Board *b;
 	Point2 cell;
 
-	b = nil;
-	if(ptinrect(mc->xy, alienboard.bbox))
-		b = &alienboard;
-	else if(ptinrect(mc->xy, localboard.bbox))
-		b = &localboard;
-
-	if(b == nil || conclusion.s != nil)
+	if(conclusion.s != nil)
 		return;
 
-	cell = toboard(b, mc->xy);
 	switch(game.state){
 	case Outlaying:
-		if(b == &localboard)
-			if(curship != nil && rectinrect(curship->bbox, localboard.bbox))
-				if(++curship-armada >= nelem(armada))
-					curship = nil;
-				else if(curship != &armada[0])
-					curship->orient = (curship-1)->orient;
-		break;
-	case Playing:
-		if(b == &alienboard){
-			chanprint(egress, "shoot %s\n", cell2coords(cell));
-			lastshot = cell;
+		if(!ptinrect(mc->xy, localboard.bbox))
+			break;
+
+		if(curship != nil && rectinrect(curship->bbox, localboard.bbox)){
+			if(++curship-armada >= nelem(armada))
+				curship = nil;
+			else if(curship != &armada[0])
+				curship->orient = (curship-1)->orient;
+			nbsend(drawchan, nil);
 		}
 		break;
+	case Playing:
+		if(!ptinrect(mc->xy, alienboard.bbox))
+			break;
+
+		cell = toboard(&alienboard, mc->xy);
+		chanprint(egress, "shoot %s\n", cell2coords(cell));
+		lastshot = cell;
+		break;
 	}
-	nbsend(drawchan, nil);
 }
 
 void
@@ -619,8 +651,13 @@ mouse(Mousectl *mc)
 {
 	Rectangle newbbox;
 	static Mouse oldm;
+	int selmatch;
 
 	mc->xy = subpt(mc->xy, screen->r.min);
+
+	if(game.state == Waiting0)
+		if((selmatch = matches->update(matches, mc, drawchan)) >= 0)
+			if(debug) fprint(2, "selected match id %d title %s\n", selmatch, matches->entries[selmatch].title);
 
 	if(game.state == Outlaying && curship != nil){
 		newbbox = mkshipbbox(toboard(&localboard, mc->xy), curship->orient, curship->ncells);
@@ -712,42 +749,47 @@ keelhaul(void)
 void
 processcmd(char *cmd)
 {
+	Cmdbuf *cb;
+	Cmdtab *ct;
 	Point2 cell;
-	char *f[3];
-	int i, nf;
+	int i;
 
 	if(debug)
 		fprint(2, "rcvd '%s'\n", cmd);
 
-	nf = tokenize(cmd, f, nelem(f));
-	if(nf < 1)
+	cb = parsecmd(cmd, strlen(cmd));
+	ct = lookupcmd(cb, svcmd, nelem(svcmd));
+	if(ct == nil){
+		free(cb);
 		return;
+	}
 
-	if(nf == 1 && strcmp(f[0], "win") == 0)
+	if(ct->index == CMwin)
 		celebrate();
-	else if(nf == 1 && strcmp(f[0], "lose") == 0)
+	else if(ct->index == CMlose)
 		keelhaul();
 
 	switch(game.state){
 	case Waiting0:
-		if(nf == 1 && strcmp(f[0], "id") == 0)
+		if(ct->index == CMid)
 			chanprint(egress, "id %s\n", uid);
-		else if(nf == 1 && strcmp(f[0], "queued") == 0)
+		else if(ct->index == CMqueued){
 			game.state = Ready;
-		else if(!matches->filling && nf == 1 && strcmp(f[0], "matches") == 0){
+			csetcursor(mctl, &patrolcursor);
+		}else if(!matches->filling && ct->index == CMmatchesb){
 			matches->clear(matches);
 			matches->filling = 1;
-		}else if(matches->filling && nf == 3)
-			matches->add(matches, strtoul(f[0], nil, 10), smprint("%s vs %s", f[1], f[2]));
-		else if(matches->filling && nf == 1 && strcmp(f[0], "end") == 0)
+		}else if(matches->filling && ct->index == CMmatch)
+			matches->add(matches, strtoul(cb->f[1], nil, 10), smprint("%s vs %s", cb->f[2], cb->f[3]));
+		else if(matches->filling && ct->index == CMmatchese)
 			matches->filling = 0;
 		break;
 	case Ready:
-		if(nf == 1 && strcmp(f[0], "layout") == 0){
+		if(ct->index == CMlayout){
 			game.state = Outlaying;
 			curship = &armada[0];
-		}else if(nf == 2 && strcmp(f[0], "oid") == 0)
-			snprint(oid, sizeof oid, "%s", f[1]);
+		}else if(ct->index == CMoid)
+			snprint(oid, sizeof oid, "%s", cb->f[1]);
 		break;
 	case Watching:
 		/* <idx?> <uid> (hit|missed) <coord> */
@@ -756,39 +798,40 @@ processcmd(char *cmd)
 		 */
 		break;
 	case Outlaying:
-		if(nf == 1 && strcmp(f[0], "wait") == 0){
+		if(ct->index == CMwait){
 			game.state = Waiting;
 			csetcursor(mctl, &waitcursor);
-		}else if(nf == 1 && strcmp(f[0], "play") == 0)
+		}else if(ct->index == CMplay)
 			game.state = Playing;
 		break;
 	case Playing:
-		if(nf == 1 && strcmp(f[0], "wait") == 0){
+		if(ct->index == CMwait){
 			game.state = Waiting;
 			csetcursor(mctl, &waitcursor);
-		}else if(nf == 1 && strcmp(f[0], "hit") == 0)
+		}else if(ct->index == CMwehit)
 			settile(&alienboard, lastshot, Thit);
-		else if(nf == 1 && strcmp(f[0], "miss") == 0)
+		else if(ct->index == CMwemiss)
 			settile(&alienboard, lastshot, Tmiss);
 		break;
 	case Waiting:
-		if(nf == 1 && strcmp(f[0], "play") == 0){
+		if(ct->index == CMplay){
 			game.state = Playing;
 			csetcursor(mctl, nil);
-		}else if(nf == 2 && strcmp(f[0], "hit") == 0){
-			cell = coords2cell(f[1]);
+		}else if(ct->index == CMtheyhit){
+			cell = coords2cell(cb->f[1]);
 			for(i = 0; i < nelem(armada); i++)
 				if(ptinrect(fromboard(&localboard, cell), armada[i].bbox)){
 					cell = subpt2(cell, armada[i].p);
 					armada[i].hit[(int)vec2len(cell)] = 1;
 					break;
 				}
-		}else if(nf == 2 && strcmp(f[0], "miss") == 0){
-			cell = coords2cell(f[1]);
+		}else if(ct->index == CMtheymiss){
+			cell = coords2cell(cb->f[1]);
 			settile(&localboard, cell, Tmiss);
 		}
 		break;
 	}
+	free(cb);
 	nbsend(drawchan, nil);
 }
 
@@ -906,7 +949,6 @@ threadmain(int argc, char *argv[])
 	initarmada();
 	matches = newmenulist(14*font->height, "ongoing matches");
 	game.state = Waiting0;
-	csetcursor(mctl, &patrolcursor);
 
 	drawchan = chancreate(sizeof(void*), 1);
 	ingress = chancreate(sizeof(char*), 1);
