@@ -317,6 +317,7 @@ battleproc(void *arg)
 	Cmdtab *ct;
 	Player *p, *op;
 	Stands stands;
+	uchar buf1[BY2MAP], buf2[BY2MAP];
 	uint n0;
 
 	Point2 cell;
@@ -432,8 +433,8 @@ Nocmd:
 				}else{
 					op = p == m->pl[0]? m->pl[1]: m->pl[0];
 					chanprint(op->io.out, "win\n");
-					op->state = Waiting0;
 					op->battle = nil;
+					op->state = Waiting0;
 					freeplayer(p);
 					freemsg(msg);
 					goto Finish;
@@ -442,6 +443,11 @@ Nocmd:
 				takeseat(&stands, p);
 				p->battle = m;
 				p->state = Watching;
+				bitpackmap(buf1, sizeof buf1, m->pl[0]);
+				bitpackmap(buf2, sizeof buf2, m->pl[1]);
+				chanprint(p->io.out, "watching %d %s %s %.*[ %.*[\n",
+					m->id, m->pl[0]->name, m->pl[1]->name,
+					sizeof buf1, buf1, sizeof buf2, buf2);
 			}else if(strcmp(msg->body, "leave seat") == 0){
 				leaveseat(&stands, p);
 				p->battle = nil;
@@ -642,6 +648,7 @@ threadmain(int argc, char *argv[])
 	char *addr;
 
 	GEOMfmtinstall();
+	fmtinstall('[', encodefmt);
 	addr = "tcp!*!3047";
 	ARGBEGIN{
 	case 'd':

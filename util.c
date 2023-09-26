@@ -100,6 +100,9 @@ fprintmap(int fd, Map *m)
 			switch(m->map[j][i]){
 			case Twater: fprint(fd, "W"); break;
 			case Tship: fprint(fd, "S"); break;
+			case Thit: fprint(fd, "X"); break;
+			case Tmiss: fprint(fd, "O"); break;
+			default: fprint(fd, "?"); break;
 			}
 		fprint(fd, "\n");
 	}
@@ -152,4 +155,45 @@ int
 min(int a, int b)
 {
 	return a < b? a: b;
+}
+
+int
+bitpackmap(uchar *buf, ulong len, Map *m)
+{
+	int i, j, off, n;
+
+	assert(len >= BY2MAP);
+
+	off = n = 0;
+	*buf = 0;
+	for(i = 0; i < MAPW; i++)
+		for(j = 0; j < MAPH; j++){
+			if(off >= 8){
+				buf[++n] = 0;
+				off = 0;
+			}
+			buf[n] |= (m->map[i][j] & TMASK) << off;
+			off += TBITS;
+		}
+	return n+1;
+}
+
+int
+bitunpackmap(Map *m, uchar *buf, ulong len)
+{
+	int i, j, off, n;
+
+	assert(len >= BY2MAP);
+
+	off = n = 0;
+	for(i = 0; i < MAPW; i++)
+		for(j = 0; j < MAPH; j++){
+			if(off >= 8){
+				n++;
+				off = 0;
+			}
+			m->map[i][j] = buf[n] >> off & TMASK;
+			off += TBITS;
+		}
+	return n+1;
 }

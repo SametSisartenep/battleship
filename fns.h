@@ -23,6 +23,8 @@ char *shipname(int);
 char *statename(int);
 int max(int, int);
 int min(int, int);
+int bitpackmap(uchar*, ulong, Map*);
+int bitunpackmap(Map*, uchar*, ulong);
 
 /*
  * menulist

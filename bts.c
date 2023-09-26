@@ -23,6 +23,7 @@ enum {
 	CMmatchesb,	/* list header */
 	CMmatch,	/* list entry */
 	CMmatchese,	/* list tail */
+	CMwatching,
 	CMwin,
 	CMlose,
 };
@@ -40,6 +41,7 @@ Cmdtab svcmd[] = {
 	CMmatchesb,	"matches",	1,
 	CMmatch,	"m",		4,
 	CMmatchese,	"end",		1,
+	CMwatching,	"watching",	6,
 	CMwin,		"win",		1,
 	CMlose,		"lose",		1,
 };
@@ -116,6 +118,7 @@ Ship *curship;
 int layoutdone;
 Point2 lastshot;
 Menulist *matches;
+MatchInfo match; /* of which we are an spectator */
 
 struct {
 	int state;
@@ -310,6 +313,10 @@ drawinfo(Image *dst)
 
 	s = "";
 	switch(game.state){
+	case Watching:
+		snprint(aux, sizeof aux, "watching %s vs. %s", match.pl[0], match.pl[1]);
+		s = aux;
+		break;
 	case Ready: s = "looking for players"; break;
 	case Outlaying: s = "place the fleet"; break;
 	case Waiting: s = "wait for your turn"; break;
@@ -326,9 +333,9 @@ drawinfo(Image *dst)
 	vstring(dst, p, display->white, ZP, font, s);
 
 	p = Pt(alienboard.bbox.max.x+2, alienboard.bbox.min.y);
-	vstring(dst, p, display->white, ZP, font, oid);
+	vstring(dst, p, display->white, ZP, font, game.state == Watching? match.pl[1]: oid);
 	p = subpt(localboard.bbox.min, Pt(font->width+2,0));
-	vstring(dst, p, display->white, ZP, font, uid);
+	vstring(dst, p, display->white, ZP, font, game.state == Watching? match.pl[0]: uid);
 
 	if(game.state == Outlaying){
 		if(c == nil)
@@ -656,8 +663,10 @@ mouse(Mousectl *mc)
 	mc->xy = subpt(mc->xy, screen->r.min);
 
 	if(game.state == Waiting0)
-		if((selmatch = matches->update(matches, mc, drawchan)) >= 0)
-			if(debug) fprint(2, "selected match id %d title %s\n", selmatch, matches->entries[selmatch].title);
+		if((selmatch = matches->update(matches, mc, drawchan)) >= 0){
+			if(debug) fprint(2, "selected match id %d title %s\n", matches->entries[selmatch].id, matches->entries[selmatch].title);
+			chanprint(egress, "watch %d\n", matches->entries[selmatch].id);
+		}
 
 	if(game.state == Outlaying && curship != nil){
 		newbbox = mkshipbbox(toboard(&localboard, mc->xy), curship->orient, curship->ncells);
@@ -752,6 +761,7 @@ processcmd(char *cmd)
 	Cmdbuf *cb;
 	Cmdtab *ct;
 	Point2 cell;
+	uchar buf[BY2MAP];
 	int i;
 
 	if(debug)
@@ -783,6 +793,18 @@ processcmd(char *cmd)
 			matches->add(matches, strtoul(cb->f[1], nil, 10), smprint("%s vs %s", cb->f[2], cb->f[3]));
 		else if(matches->filling && ct->index == CMmatchese)
 			matches->filling = 0;
+		else if(ct->index == CMwatching){
+			match.id = strtoul(cb->f[1], nil, 10);
+			match.pl[0] = estrdup(cb->f[2]);
+			match.pl[1] = estrdup(cb->f[3]);
+			match.bl[0] = &localboard;
+			match.bl[1] = &alienboard;
+			dec64(buf, sizeof buf, cb->f[4], strlen(cb->f[4]));
+			bitunpackmap(match.bl[0], buf, sizeof buf);
+			dec64(buf, sizeof buf, cb->f[5], strlen(cb->f[5]));
+			bitunpackmap(match.bl[1], buf, sizeof buf);
+			game.state = Watching;
+		}
 		break;
 	case Ready:
 		if(ct->index == CMlayout){

@@ -5,6 +5,9 @@ enum {
 	Tmiss,
 	NTILES,
 
+	TBITS = 2, /* ceil(log(NTILES)/log(2)) */
+	TMASK = (1<<TBITS) - 1,
+
 	Scarrier = 0,
 	Sbattleship,
 	Scruiser,
@@ -31,6 +34,7 @@ enum {
 	SCRH = Boardmargin+MAPH*TH+TH+MAPH*TH+Boardmargin,
 
 	KB = 1024,
+	BY2MAP = TBITS*MAPW*MAPH/8+1,
 };
 
 typedef struct Ship Ship;
@@ -41,6 +45,7 @@ typedef struct Player Player;
 typedef struct Match Match;
 typedef struct Msg Msg;
 typedef struct Stands Stands;
+typedef struct MatchInfo MatchInfo;
 
 struct Ship
 {
@@ -104,6 +109,13 @@ struct Stands
 	Player **seats;
 	ulong nused;
 	ulong cap;
+};
+
+struct MatchInfo
+{
+	int id;
+	char *pl[2];
+	Board *bl[2];
 };
 
 typedef struct Mentry Mentry;
