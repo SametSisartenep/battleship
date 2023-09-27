@@ -26,6 +26,11 @@ enum {
 	CMwatching,
 	CMwin,
 	CMlose,
+	CMplayeroutlay,
+	CMplayerhit,
+	CMplayermiss,
+	CMplayerplays,
+	CMplayerwon,
 };
 Cmdtab svcmd[] = {
 	CMid,		"id",		1,
@@ -41,9 +46,14 @@ Cmdtab svcmd[] = {
 	CMmatchesb,	"matches",	1,
 	CMmatch,	"m",		4,
 	CMmatchese,	"end",		1,
-	CMwatching,	"watching",	6,
+	CMwatching,	"watching",	4,
 	CMwin,		"win",		1,
 	CMlose,		"lose",		1,
+	CMplayeroutlay,	"outlayed",	3,
+	CMplayerhit,	"hit",		3,
+	CMplayermiss,	"miss",		3,
+	CMplayerplays,	"plays",	2,
+	CMplayerwon,	"won",		2,
 };
 
 int debug;
@@ -310,11 +320,12 @@ drawinfo(Image *dst)
 	static Image *c;
 	Point p;
 	char *s, aux[32];
+	int i;
 
 	s = "";
 	switch(game.state){
 	case Watching:
-		snprint(aux, sizeof aux, "watching %s vs. %s", match.pl[0], match.pl[1]);
+		snprint(aux, sizeof aux, "watching %s vs. %s", match.pl[0].uid, match.pl[1].uid);
 		s = aux;
 		break;
 	case Ready: s = "looking for players"; break;
@@ -333,9 +344,9 @@ drawinfo(Image *dst)
 	vstring(dst, p, display->white, ZP, font, s);
 
 	p = Pt(alienboard.bbox.max.x+2, alienboard.bbox.min.y);
-	vstring(dst, p, display->white, ZP, font, game.state == Watching? match.pl[1]: oid);
+	vstring(dst, p, display->white, ZP, font, game.state == Watching? match.pl[1].uid: oid);
 	p = subpt(localboard.bbox.min, Pt(font->width+2,0));
-	vstring(dst, p, display->white, ZP, font, game.state == Watching? match.pl[0]: uid);
+	vstring(dst, p, display->white, ZP, font, game.state == Watching? match.pl[0].uid: uid);
 
 	if(game.state == Outlaying){
 		if(c == nil)
@@ -349,6 +360,15 @@ drawinfo(Image *dst)
 			p = Pt(SCRW/2 - stringwidth(font, s)/2, SCRH-Boardmargin);
 			string(dst, p, c, ZP, font, s);
 		}
+	}else if(game.state == Watching){
+		if(c == nil)
+			c = eallocimage(display, Rect(0,0,1,1), screen->chan, 1, DYellow);
+		for(i = 0; i < nelem(match.pl); i++)
+			if(match.pl[i].state == Playing){
+				snprint(aux, sizeof aux, "it's %s's turn", match.pl[i].uid);
+				p = Pt(SCRW/2 - stringwidth(font, aux)/2, SCRH-Boardmargin);
+				string(dst, p, c, ZP, font, aux);
+			}
 	}
 }
 
@@ -756,13 +776,31 @@ keelhaul(void)
 }
 
 void
+announcewinner(char *winner)
+{
+	static Image *c;
+	static char s[16];
+
+	if(winner == nil)
+		return;
+
+	/* TODO build a global color palette. this static color referencing is BS. */
+	if(c == nil)
+		c = eallocimage(display, Rect(0,0,1,1), screen->chan, 1, DGreen);
+
+	snprint(s, sizeof s, "%s WON", winner);
+	conclusion.c = c;
+	conclusion.s = s;
+}
+
+void
 processcmd(char *cmd)
 {
 	Cmdbuf *cb;
 	Cmdtab *ct;
 	Point2 cell;
 	uchar buf[BY2MAP];
-	int i;
+	int i, idx;
 
 	if(debug)
 		fprint(2, "rcvd '%s'\n", cmd);
@@ -795,14 +833,12 @@ processcmd(char *cmd)
 			matches->filling = 0;
 		else if(ct->index == CMwatching){
 			match.id = strtoul(cb->f[1], nil, 10);
-			match.pl[0] = estrdup(cb->f[2]);
-			match.pl[1] = estrdup(cb->f[3]);
+			snprint(match.pl[0].uid, sizeof match.pl[0].uid, "%s", cb->f[2]);
+			snprint(match.pl[1].uid, sizeof match.pl[1].uid, "%s", cb->f[3]);
+			match.pl[0].state = Outlaying;
+			match.pl[1].state = Outlaying;
 			match.bl[0] = &localboard;
 			match.bl[1] = &alienboard;
-			dec64(buf, sizeof buf, cb->f[4], strlen(cb->f[4]));
-			bitunpackmap(match.bl[0], buf, sizeof buf);
-			dec64(buf, sizeof buf, cb->f[5], strlen(cb->f[5]));
-			bitunpackmap(match.bl[1], buf, sizeof buf);
 			game.state = Watching;
 		}
 		break;
@@ -814,10 +850,28 @@ processcmd(char *cmd)
 			snprint(oid, sizeof oid, "%s", cb->f[1]);
 		break;
 	case Watching:
-		/* <idx?> <uid> (hit|missed) <coord> */
-		/*
-		 * TODO can't use the id as the key because they can collide.
-		 */
+		if(ct->index == CMplayeroutlay){
+			idx = strtoul(cb->f[1], nil, 10);
+			if(dec64(buf, sizeof buf, cb->f[2], strlen(cb->f[2])) < 0)
+				sysfatal("dec64 failed");
+			bitunpackmap(match.bl[idx], buf, sizeof buf);
+			match.pl[idx].state = Waiting;
+		}else if(ct->index == CMplayerhit){
+			idx = strtoul(cb->f[1], nil, 10);
+			cell = coords2cell(cb->f[2]);
+			settile(match.bl[idx^1], cell, Thit);
+		}else if(ct->index == CMplayermiss){
+			idx = strtoul(cb->f[1], nil, 10);
+			cell = coords2cell(cb->f[2]);
+			settile(match.bl[idx^1], cell, Tmiss);
+		}else if(ct->index == CMplayerplays){
+			idx = strtoul(cb->f[1], nil, 10);
+			match.pl[idx].state = Playing;
+			match.pl[idx^1].state = Waiting;
+		}else if(ct->index == CMplayerwon){
+			idx = strtoul(cb->f[1], nil, 10);
+			announcewinner(match.pl[idx].uid);
+		}
 		break;
 	case Outlaying:
 		if(ct->index == CMwait){

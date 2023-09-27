@@ -197,3 +197,17 @@ bitunpackmap(Map *m, uchar *buf, ulong len)
 		}
 	return n+1;
 }
+
+int
+chanvprint(Channel *c, char *fmt, va_list arg)
+{
+	char *p;
+	int n;
+
+	p = vsmprint(fmt, arg);
+	if(p == nil)
+		sysfatal("vsmprint failed: %r");
+	n = sendp(c, p);
+	yield();	/* let recipient handle message immediately */
+	return n;
+}

@@ -25,6 +25,7 @@ int max(int, int);
 int min(int, int);
 int bitpackmap(uchar*, ulong, Map*);
 int bitunpackmap(Map*, uchar*, ulong);
+int chanvprint(Channel*, char*, va_list);
 
 /*
  * menulist

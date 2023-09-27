@@ -34,7 +34,7 @@ enum {
 	SCRH = Boardmargin+MAPH*TH+TH+MAPH*TH+Boardmargin,
 
 	KB = 1024,
-	BY2MAP = TBITS*MAPW*MAPH/8+1,
+	BY2MAP = (TBITS*MAPW*MAPH+7)/8,
 };
 
 typedef struct Ship Ship;
@@ -114,8 +114,12 @@ struct Stands
 struct MatchInfo
 {
 	int id;
-	char *pl[2];
+	struct {
+		char uid[8+1];
+		int state;
+	} pl[2];
 	Board *bl[2];
+	char conclusion[16];
 };
 
 typedef struct Mentry Mentry;

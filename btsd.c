@@ -162,6 +162,30 @@ leaveseat(Stands *s, Player *p)
 }
 
 void
+freeseats(Stands *s)
+{
+	int i;
+
+	for(i = 0; i < s->nused; i++){
+		s->seats[i]->state = Waiting0;
+		s->seats[i]->battle = nil;
+	}
+	free(s->seats);
+}
+
+void
+broadcast(Stands *s, char *fmt, ...)
+{
+	va_list arg;
+	int i;
+
+	va_start(arg, fmt);
+	for(i = 0; i < s->nused; i++)
+		chanvprint(s->seats[i]->io.out, fmt, arg);
+	va_end(arg);
+}
+
+void
 netrecvthread(void *arg)
 {
 	Chanpipe *cp;
@@ -316,8 +340,8 @@ battleproc(void *arg)
 	Cmdbuf *cb;
 	Cmdtab *ct;
 	Player *p, *op;
-	Stands stands;
-	uchar buf1[BY2MAP], buf2[BY2MAP];
+	Stands stands; /* TODO make this a member of Match */
+	uchar buf[BY2MAP];
 	uint n0;
 
 	Point2 cell;
@@ -367,6 +391,8 @@ battleproc(void *arg)
 							settiles(p, cell, orient, shiplen(i), Tship);
 						}
 						p->state = Waiting;
+						bitpackmap(buf, sizeof buf, p);
+						broadcast(&stands, "outlayed %d %.*[\n", p == m->pl[0]? 0: 1, sizeof buf, buf);
 						if(op->state == Waiting){
 							if(debug){
 								fprint(2, "%s's map:\n", p->name);
@@ -380,6 +406,7 @@ battleproc(void *arg)
 							chanprint(m->pl[n0%2]->io.out, "play\n");
 							m->pl[n0%2]->state = Playing;
 							chanprint(m->pl[(n0+1)%2]->io.out, "wait\n");
+							broadcast(&stands, "plays %d\n", n0%2);
 						}
 					}
 				break;
@@ -391,6 +418,7 @@ battleproc(void *arg)
 						settile(op, cell, Thit);
 						chanprint(p->io.out, "hit\n");
 						chanprint(op->io.out, "hit %s\n", cell2coords(cell));
+						broadcast(&stands, "hit %d %s\n", p == m->pl[0]? 0: 1, cell2coords(cell));
 						if(countshipcells(op) < (debug? 17: 1)){
 							chanprint(p->io.out, "win\n");
 							chanprint(op->io.out, "lose\n");
@@ -398,6 +426,7 @@ battleproc(void *arg)
 							p->battle = nil;
 							op->state = Waiting0;
 							op->battle = nil;
+							broadcast(&stands, "won %d\n", p == m->pl[0]? 0: 1);
 							freemsg(msg);
 							goto Finish;
 						}
@@ -406,11 +435,13 @@ battleproc(void *arg)
 						settile(op, cell, Tmiss);
 						chanprint(p->io.out, "miss\n");
 						chanprint(op->io.out, "miss %s\n", cell2coords(cell));
+						broadcast(&stands, "miss %d %s\n", p == m->pl[0]? 0: 1, cell2coords(cell));
 Swapturn:
 						chanprint(p->io.out, "wait\n");
 						chanprint(op->io.out, "play\n");
 						p->state = Waiting;
 						op->state = Playing;
+						broadcast(&stands, "plays %d\n", op == m->pl[0]? 0: 1);
 						break;
 					}
 					if(debug)
@@ -433,25 +464,28 @@ Nocmd:
 				}else{
 					op = p == m->pl[0]? m->pl[1]: m->pl[0];
 					chanprint(op->io.out, "win\n");
-					op->battle = nil;
 					op->state = Waiting0;
+					op->battle = nil;
+					broadcast(&stands, "won %d\n", op == m->pl[0]? 0: 1);
 					freeplayer(p);
 					freemsg(msg);
 					goto Finish;
 				}
 			}else if(strcmp(msg->body, "take seat") == 0){
 				takeseat(&stands, p);
-				p->battle = m;
 				p->state = Watching;
-				bitpackmap(buf1, sizeof buf1, m->pl[0]);
-				bitpackmap(buf2, sizeof buf2, m->pl[1]);
-				chanprint(p->io.out, "watching %d %s %s %.*[ %.*[\n",
-					m->id, m->pl[0]->name, m->pl[1]->name,
-					sizeof buf1, buf1, sizeof buf2, buf2);
+				p->battle = m;
+				chanprint(p->io.out, "watching %d %s %s\n",
+					m->id, m->pl[0]->name, m->pl[1]->name);
+				for(i = 0; i < nelem(m->pl); i++)
+					if(m->pl[i]->state != Outlaying){
+						bitpackmap(buf, sizeof buf, m->pl[i]);
+						chanprint(p->io.out, "outlayed %d %.*[\n", i, sizeof buf, buf);
+					}
 			}else if(strcmp(msg->body, "leave seat") == 0){
 				leaveseat(&stands, p);
-				p->battle = nil;
 				p->state = Waiting0;
+				p->battle = nil;
 			}
 
 			freemsg(msg);
@@ -461,7 +495,7 @@ Nocmd:
 Finish:
 	if(debug)
 		fprint(2, "[%d] battleproc ending\n", getpid());
-	free(stands.seats);
+	freeseats(&stands);
 	rmmatch(m);
 	freematch(m);
 	threadexits(nil);
