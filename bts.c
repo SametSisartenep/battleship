@@ -319,7 +319,7 @@ drawinfo(Image *dst)
 {
 	static Image *c;
 	Point p;
-	char *s, aux[32];
+	char *s, aux[32], aux2[32];
 	int i;
 
 	s = "";
@@ -363,12 +363,17 @@ drawinfo(Image *dst)
 	}else if(game.state == Watching){
 		if(c == nil)
 			c = eallocimage(display, Rect(0,0,1,1), screen->chan, 1, DYellow);
+		snprint(aux, sizeof aux, "waiting for players to");
+		snprint(aux2, sizeof aux2, "lay out their fleet");
 		for(i = 0; i < nelem(match.pl); i++)
 			if(match.pl[i].state == Playing){
 				snprint(aux, sizeof aux, "it's %s's turn", match.pl[i].uid);
-				p = Pt(SCRW/2 - stringwidth(font, aux)/2, SCRH-Boardmargin);
-				string(dst, p, c, ZP, font, aux);
+				aux2[0] = 0;
 			}
+		p = Pt(SCRW/2 - stringwidth(font, aux)/2, SCRH-Boardmargin);
+		string(dst, p, c, ZP, font, aux);
+		p = Pt(SCRW/2 - stringwidth(font, aux2)/2, SCRH-Boardmargin+font->height);
+		string(dst, p, c, ZP, font, aux2);
 	}
 }
 
