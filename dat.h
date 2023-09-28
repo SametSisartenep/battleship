@@ -30,8 +30,12 @@ enum {
 	TH = TW,
 	MAPW = 17,
 	MAPH = MAPW,
-	SCRW = Boardmargin+MAPW*TW+Boardmargin,
-	SCRH = Boardmargin+MAPH*TH+TH+MAPH*TH+Boardmargin,
+	SCRW = Boardmargin + Borderwidth+MAPW*TW+Borderwidth + Boardmargin,
+	SCRH = Boardmargin+
+		Borderwidth+MAPH*TH+Borderwidth+
+		TH+
+		Borderwidth+MAPH*TH+Borderwidth+
+		Boardmargin,
 
 	KB = 1024,
 	BY2MAP = (TBITS*MAPW*MAPH+7)/8,
@@ -136,7 +140,7 @@ struct Mlist
 {
 	Mentry *entries;
 	int nentries;
-	int filling;
+	int filling;	/* lock-alike */
 };
 
 struct Menulist

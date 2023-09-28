@@ -19,6 +19,7 @@ enum {
 	PCBlue,
 	PCWater,
 	PCWaves,
+	PCBrown,
 	PCShadow,
 	NCOLORS
 };
@@ -180,8 +181,8 @@ toboard(Board *b, Point p)
 	Point2 np;
 
 	np = rframexform(rframexform(Pt2(p.x,p.y,1), worldrf), *b);
-	np.x = (int)np.x;
-	np.y = (int)np.y;
+	np.x = floor(np.x);
+	np.y = floor(np.y);
 	return np;
 }
 
@@ -308,6 +309,7 @@ drawboard(Image *dst, Board *b)
 {
 	int i, j;
 
+	border(dst, b->bbox, -Borderwidth, pal[PCBrown], ZP);
 	for(i = 0; i < MAPW; i++)
 		for(j = 0; j < MAPH; j++)
 			drawtile(dst, b, Pt2(i,j,1), b->map[i][j]);
@@ -351,15 +353,15 @@ drawinfo(Image *dst)
 	string(dst, p, pal[PCWhite], ZP, font, s);
 
 	s = "TARGET";
-	p = subpt(alienboard.bbox.min, Pt(font->width+2,0));
+	p = subpt(alienboard.bbox.min, Pt(font->width+2+Borderwidth,0));
 	vstring(dst, p, pal[PCWhite], ZP, font, s);
 	s = "LOCAL";
-	p = Pt(localboard.bbox.max.x+2, localboard.bbox.min.y);
+	p = Pt(localboard.bbox.max.x+2+Borderwidth, localboard.bbox.min.y);
 	vstring(dst, p, pal[PCWhite], ZP, font, s);
 
-	p = Pt(alienboard.bbox.max.x+2, alienboard.bbox.min.y);
+	p = Pt(alienboard.bbox.max.x+2+Borderwidth, alienboard.bbox.min.y);
 	vstring(dst, p, pal[PCWhite], ZP, font, game.state == Watching? match.pl[1].uid: oid);
-	p = subpt(localboard.bbox.min, Pt(font->width+2,0));
+	p = subpt(localboard.bbox.min, Pt(font->width+2+Borderwidth,0));
 	vstring(dst, p, pal[PCWhite], ZP, font, game.state == Watching? match.pl[0].uid: uid);
 
 	/* TODO make this an info panel and show errors from bad transactions. */
@@ -462,6 +464,7 @@ initpalette(void)
 	pal[PCWater] = eallocimage(display, Rect(0,0,1,1), screen->chan, 1, DPalegreyblue);
 	pal[PCWaves] = eallocimage(display, Rect(0,0,1,1), screen->chan, 1, DPalebluegreen);
 	pal[PCBlue] = pal[PCWaves];
+	pal[PCBrown] = eallocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x806000FF);
 	pal[PCShadow] = eallocimage(display, Rect(0,0,1,1), RGBA32, 1, 0x0000007f);
 }
 
@@ -508,13 +511,13 @@ void
 initboards(void)
 {
 	memset(alienboard.map, Twater, MAPW*MAPH);
-	alienboard.p = Pt2(Boardmargin,Boardmargin,1);
+	alienboard.p = Pt2(Boardmargin+Borderwidth,Boardmargin+Borderwidth,1);
 	alienboard.bx = Vec2(TW,0);
 	alienboard.by = Vec2(0,TH);
 	alienboard.bbox = Rpt(fromworld(alienboard.p), fromworld(addpt2(alienboard.p, Pt2(TW*MAPW,TH*MAPH,1))));
 
 	memset(localboard.map, Twater, MAPW*MAPH);
-	localboard.p = addpt2(alienboard.p, Vec2(0,MAPH*TH+TH));
+	localboard.p = addpt2(alienboard.p, Vec2(0,MAPH*TH+Borderwidth+TH+Borderwidth));
 	localboard.bx = Vec2(TW,0);
 	localboard.by = Vec2(0,TH);
 	localboard.bbox = Rpt(fromworld(localboard.p), fromworld(addpt2(localboard.p, Pt2(TW*MAPW,TH*MAPH,1))));
