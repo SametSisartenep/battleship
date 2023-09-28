@@ -10,6 +10,20 @@
 #include "fns.h"
 
 enum {
+	PCBlack,
+	PCWhite,
+	PCRed,
+	PCGreen,
+	PCShip,
+	PCYellow,
+	PCBlue,
+	PCWater,
+	PCWaves,
+	PCShadow,
+	NCOLORS
+};
+
+enum {
 	CMid,
 	CMqueued,
 	CMlayout,
@@ -119,6 +133,7 @@ Channel *drawchan;
 Channel *ingress, *egress;
 Mousectl *mctl; /* only used to update the cursor */
 RFrame worldrf;
+Image *pal[NCOLORS];
 Image *screenb;
 Image *tiletab[NTILES];
 Board alienboard;
@@ -303,7 +318,7 @@ drawtitle(Image *dst)
 {
 	static char s[] = "BATTLESHIP";
 
-	string(dst, Pt(SCRW/2 - stringwidth(titlefont, s)/2, 0), display->white, ZP, titlefont, s);
+	string(dst, Pt(SCRW/2 - stringwidth(titlefont, s)/2, 0), pal[PCWhite], ZP, titlefont, s);
 }
 
 void
@@ -311,13 +326,12 @@ drawgameoptions(Image *dst)
 {
 	static char s[] = "press p to play, w to watch";
 
-	string(dst, Pt(SCRW/2 - stringwidth(font, s)/2, 10*font->height+5), display->white, ZP, font, s);
+	string(dst, Pt(SCRW/2 - stringwidth(font, s)/2, 10*font->height+5), pal[PCWhite], ZP, font, s);
 }
 
 void
 drawinfo(Image *dst)
 {
-	static Image *c;
 	Point p;
 	char *s, aux[32], aux2[32];
 	int i;
@@ -334,35 +348,32 @@ drawinfo(Image *dst)
 	case Playing: s = "your turn"; break;
 	}
 	p = Pt(SCRW/2 - stringwidth(font, s)/2, 0);
-	string(dst, p, display->white, ZP, font, s);
+	string(dst, p, pal[PCWhite], ZP, font, s);
 
 	s = "TARGET";
 	p = subpt(alienboard.bbox.min, Pt(font->width+2,0));
-	vstring(dst, p, display->white, ZP, font, s);
+	vstring(dst, p, pal[PCWhite], ZP, font, s);
 	s = "LOCAL";
 	p = Pt(localboard.bbox.max.x+2, localboard.bbox.min.y);
-	vstring(dst, p, display->white, ZP, font, s);
+	vstring(dst, p, pal[PCWhite], ZP, font, s);
 
 	p = Pt(alienboard.bbox.max.x+2, alienboard.bbox.min.y);
-	vstring(dst, p, display->white, ZP, font, game.state == Watching? match.pl[1].uid: oid);
+	vstring(dst, p, pal[PCWhite], ZP, font, game.state == Watching? match.pl[1].uid: oid);
 	p = subpt(localboard.bbox.min, Pt(font->width+2,0));
-	vstring(dst, p, display->white, ZP, font, game.state == Watching? match.pl[0].uid: uid);
+	vstring(dst, p, pal[PCWhite], ZP, font, game.state == Watching? match.pl[0].uid: uid);
 
+	/* TODO make this an info panel and show errors from bad transactions. */
 	if(game.state == Outlaying){
-		if(c == nil)
-			c = eallocimage(display, Rect(0,0,1,1), screen->chan, 1, DYellow);
 		if(curship != nil){
 			snprint(aux, sizeof aux, "%s (%d)", shipname(curship-armada), curship->ncells);
 			p = Pt(SCRW/2 - stringwidth(font, aux)/2, SCRH-Boardmargin);
-			string(dst, p, c, ZP, font, aux);
+			string(dst, p, pal[PCYellow], ZP, font, aux);
 		}else{
 			s = "done with the layout?";
 			p = Pt(SCRW/2 - stringwidth(font, s)/2, SCRH-Boardmargin);
-			string(dst, p, c, ZP, font, s);
+			string(dst, p, pal[PCYellow], ZP, font, s);
 		}
 	}else if(game.state == Watching){
-		if(c == nil)
-			c = eallocimage(display, Rect(0,0,1,1), screen->chan, 1, DYellow);
 		snprint(aux, sizeof aux, "waiting for players to");
 		snprint(aux2, sizeof aux2, "lay out their fleet");
 		for(i = 0; i < nelem(match.pl); i++)
@@ -371,26 +382,23 @@ drawinfo(Image *dst)
 				aux2[0] = 0;
 			}
 		p = Pt(SCRW/2 - stringwidth(font, aux)/2, SCRH-Boardmargin);
-		string(dst, p, c, ZP, font, aux);
+		string(dst, p, pal[PCBlue], ZP, font, aux);
 		p = Pt(SCRW/2 - stringwidth(font, aux2)/2, SCRH-Boardmargin+font->height);
-		string(dst, p, c, ZP, font, aux2);
+		string(dst, p, pal[PCBlue], ZP, font, aux2);
 	}
 }
 
 void
 drawconclusion(Image *dst)
 {
-	static Image *shadow;
 	static char s[] = "press any key to continue";
 
 	if(conclusion.s == nil)
 		return;
 
-	if(shadow == nil)
-		shadow = eallocimage(display, Rect(0,0,1,1), RGBA32, 1, 0x0000007f);
-	draw(dst, dst->r, shadow, nil, ZP);
+	draw(dst, dst->r, pal[PCShadow], nil, ZP);
 	string(dst, Pt(SCRW/2 - stringwidth(font, conclusion.s)/2, font->height+5), conclusion.c, ZP, font, conclusion.s);
-	string(dst, Pt(SCRW/2 - stringwidth(font, s)/2, 10*font->height+5), display->white, ZP, font, s);
+	string(dst, Pt(SCRW/2 - stringwidth(font, s)/2, 10*font->height+5), pal[PCWhite], ZP, font, s);
 }
 
 void
@@ -398,7 +406,7 @@ redraw(void)
 {
 	lockdisplay(display);
 
-	draw(screenb, screenb->r, display->black, nil, ZP);
+	draw(screenb, screenb->r, pal[PCBlack], nil, ZP);
 	switch(game.state){
 	case Waiting0:
 		drawtitle(screenb);
@@ -443,9 +451,23 @@ resize(void)
 }
 
 void
+initpalette(void)
+{
+	pal[PCBlack] = display->black;
+	pal[PCWhite] = display->white;
+	pal[PCRed] = eallocimage(display, Rect(0,0,1,1), screen->chan, 1, DRed);
+	pal[PCGreen] = eallocimage(display, Rect(0,0,1,1), screen->chan, 1, DGreen);
+	pal[PCShip] = eallocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xAAAAAAFF);
+	pal[PCYellow] = eallocimage(display, Rect(0,0,1,1), screen->chan, 1, DDarkyellow);
+	pal[PCWater] = eallocimage(display, Rect(0,0,1,1), screen->chan, 1, DPalegreyblue);
+	pal[PCWaves] = eallocimage(display, Rect(0,0,1,1), screen->chan, 1, DPalebluegreen);
+	pal[PCBlue] = pal[PCWaves];
+	pal[PCShadow] = eallocimage(display, Rect(0,0,1,1), RGBA32, 1, 0x0000007f);
+}
+
+void
 inittiles(void)
 {
-	Image *brush;
 	int i, x, y;
 	Point pts[2];
 
@@ -453,44 +475,30 @@ inittiles(void)
 		tiletab[i] = eallocimage(display, Rect(0,0,TW,TH), screen->chan, 0, DNofill);
 		switch(i){
 		case Twater:
-			brush = eallocimage(display, Rect(0,0,1,1), screen->chan, 1, DPalegreyblue);
-			draw(tiletab[i], tiletab[i]->r, brush, nil, ZP);
-			freeimage(brush);
-			brush = eallocimage(display, Rect(0,0,1,1), screen->chan, 1, DPalebluegreen);
+			draw(tiletab[i], tiletab[i]->r, pal[PCWater], nil, ZP);
 			for(pts[0] = ZP, x = 0; x < TW; x++){
 				y = sin(x)*TH/2;
 				pts[1] = Pt(x,y+TH/2);
-				line(tiletab[i], pts[0], pts[1], Endsquare, Endsquare, 0, brush, ZP);
+				line(tiletab[i], pts[0], pts[1], Endsquare, Endsquare, 0, pal[PCWaves], ZP);
 				pts[0] = pts[1];
 			}
-			freeimage(brush);
 			break;
 		case Tship:
-			brush = eallocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xAAAAAAFF);
-			draw(tiletab[i], tiletab[i]->r, brush, nil, ZP);
-			freeimage(brush);
-			brush = eallocimage(display, Rect(0,0,1,1), screen->chan, 1, DBlack);
-			fillellipse(tiletab[i], Pt(TW/2,TH/2), 2, 2, brush, ZP);
-			freeimage(brush);
+			draw(tiletab[i], tiletab[i]->r, pal[PCShip], nil, ZP);
+			fillellipse(tiletab[i], Pt(TW/2,TH/2), 2, 2, pal[PCBlack], ZP);
 			break;
 		case Thit:
-			brush = eallocimage(display, Rect(0,0,1,1), screen->chan, 1, DRed);
-			draw(tiletab[i], tiletab[i]->r, brush, nil, ZP);
-			freeimage(brush);
-			brush = eallocimage(display, Rect(0,0,1,1), screen->chan, 1, DBlack);
+			draw(tiletab[i], tiletab[i]->r, pal[PCRed], nil, ZP);
 			pts[0] = Pt(TW/2-TW/4,TH/2-TH/4);
 			pts[1] = Pt(TW/2+TW/4,TH/2+TH/4);
-			line(tiletab[i], pts[0], pts[1], Endsquare, Endsquare, 1, brush, ZP);
+			line(tiletab[i], pts[0], pts[1], Endsquare, Endsquare, 1, pal[PCBlack], ZP);
 			pts[0].y += TH/2;
 			pts[1].y -= TH/2;
-			line(tiletab[i], pts[0], pts[1], Endsquare, Endsquare, 1, brush, ZP);
-			freeimage(brush);
+			line(tiletab[i], pts[0], pts[1], Endsquare, Endsquare, 1, pal[PCBlack], ZP);
 			break;
 		case Tmiss:
 			draw(tiletab[i], tiletab[i]->r, tiletab[Twater], nil, ZP);
-			brush = eallocimage(display, Rect(0,0,1,1), screen->chan, 1, DWhite);
-			ellipse(tiletab[i], Pt(TW/2,TH/2), 6, 6, 1, brush, ZP);
-			freeimage(brush);
+			ellipse(tiletab[i], Pt(TW/2,TH/2), 6, 6, 1, pal[PCWhite], ZP);
 			break;
 		}
 	}
@@ -759,42 +767,31 @@ key(Rune r)
 void
 celebrate(void)
 {
-	static Image *c;
 	static char s[] = "YOU WON!";
 
-	if(c == nil)
-		c = eallocimage(display, Rect(0,0,1,1), screen->chan, 1, DGreen);
-	conclusion.c = c;
+	conclusion.c = pal[PCGreen];
 	conclusion.s = s;
 }
 
 void
 keelhaul(void)
 {
-	static Image *c;
 	static char s[] = "…YOU LOST";
 
-	if(c == nil)
-		c = eallocimage(display, Rect(0,0,1,1), screen->chan, 1, DRed);
-	conclusion.c = c;
+	conclusion.c = pal[PCRed];
 	conclusion.s = s;
 }
 
 void
 announcewinner(char *winner)
 {
-	static Image *c;
 	static char s[16];
 
 	if(winner == nil)
 		return;
 
-	/* TODO build a global color palette. this static color referencing is BS. */
-	if(c == nil)
-		c = eallocimage(display, Rect(0,0,1,1), screen->chan, 1, DGreen);
-
 	snprint(s, sizeof s, "%s WON", winner);
-	conclusion.c = c;
+	conclusion.c = pal[PCGreen];
 	conclusion.s = s;
 }
 
@@ -1025,11 +1022,14 @@ threadmain(int argc, char *argv[])
 	if(titlefont == nil)
 		sysfatal("openfont: %r");
 
+	initpalette();
 	inittiles();
 	initboards();
 	initarmada();
 	matches = newmenulist(14*font->height, "ongoing matches");
 	game.state = Waiting0;
+
+	/* TODO add sfx */
 
 	drawchan = chancreate(sizeof(void*), 1);
 	ingress = chancreate(sizeof(char*), 1);
