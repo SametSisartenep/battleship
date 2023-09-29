@@ -35,9 +35,9 @@ enum {
 	CMwemiss,
 	CMtheyhit,
 	CMtheymiss,
-	CMmatchesb,	/* list header */
+	CMmatches,	/* list opening */
 	CMmatch,	/* list entry */
-	CMmatchese,	/* list tail */
+	CMendmatches,	/* list closure */
 	CMwatching,
 	CMwin,
 	CMlose,
@@ -58,9 +58,9 @@ Cmdtab svcmd[] = {
 	CMwemiss,	"miss",		1,
 	CMtheyhit, 	"hit",		2,
 	CMtheymiss,	"miss",		2,
-	CMmatchesb,	"matches",	1,
+	CMmatches,	"matches",	1,
 	CMmatch,	"m",		4,
-	CMmatchese,	"end",		1,
+	CMendmatches,	"endmatches",	1,
 	CMwatching,	"watching",	4,
 	CMwin,		"win",		1,
 	CMlose,		"lose",		1,
@@ -829,12 +829,12 @@ processcmd(char *cmd)
 		else if(ct->index == CMqueued){
 			game.state = Ready;
 			csetcursor(mctl, &patrolcursor);
-		}else if(!matches->filling && ct->index == CMmatchesb){
+		}else if(ct->index == CMmatches && !matches->filling){
 			matches->clear(matches);
 			matches->filling = 1;
-		}else if(matches->filling && ct->index == CMmatch)
+		}else if(ct->index == CMmatch && matches->filling)
 			matches->add(matches, strtoul(cb->f[1], nil, 10), smprint("%s vs %s", cb->f[2], cb->f[3]));
-		else if(matches->filling && ct->index == CMmatchese)
+		else if(ct->index == CMendmatches && matches->filling)
 			matches->filling = 0;
 		else if(ct->index == CMwatching){
 			match.id = strtoul(cb->f[1], nil, 10);

@@ -174,6 +174,19 @@ freeseats(Stands *s)
 }
 
 void
+sendmatches(Channel *c)
+{
+	Match *m;
+
+	rlock(&theaterlk);
+	chanprint(c, "matches\n");
+	for(m = theater.next; m != &theater; m = m->next)
+		chanprint(c, "m %d %s %s\n", m->id, m->pl[0]->name, m->pl[1]->name);
+	chanprint(c, "endmatches\n");
+	runlock(&theaterlk);
+}
+
+void
 broadcast(Stands *s, char *fmt, ...)
 {
 	va_list arg;
@@ -271,9 +284,10 @@ playerproc(void *arg)
 				goto Nocmd;
 
 			if(my->name[0] == 0){
-				if(ct->index == CMid && strlen(cb->f[1]) > 0)
+				if(ct->index == CMid && strlen(cb->f[1]) > 0){
 					snprint(my->name, sizeof my->name, "%s", cb->f[1]);
-				else
+					sendmatches(my->io.out);
+				}else
 					chanprint(my->io.out, "id\n");
 			}else
 				switch(my->state){
@@ -281,12 +295,7 @@ playerproc(void *arg)
 					if(ct->index == CMplay)
 						sendp(playerq, my);
 					else if(ct->index == CMgetmatches){
-						rlock(&theaterlk);
-						chanprint(my->io.out, "matches\n");
-						for(m = theater.next; m != &theater; m = m->next)
-							chanprint(my->io.out, "m %d %s %s\n", m->id, m->pl[0]->name, m->pl[1]->name);
-						chanprint(my->io.out, "end\n");
-						runlock(&theaterlk);
+						sendmatches(my->io.out);
 					}else if(ct->index == CMwatch){
 						mid = strtoul(cb->f[1], nil, 10);
 						m = getmatch(mid);
@@ -330,6 +339,11 @@ End:
 		fprint(2, "[%d] lost connection\n", getpid());
 	threadkillgrp(threadgetgrp());
 	threadexits(nil);
+}
+
+void
+aiproc(void *)
+{
 }
 
 void
@@ -402,11 +416,11 @@ battleproc(void *arg)
 							}
 							n0 = truerand();
 							if(debug)
-								fprint(2, "let the game begin: %s plays, %s waits\n", m->pl[n0%2]->name, m->pl[(n0+1)%2]->name);
-							chanprint(m->pl[n0%2]->io.out, "play\n");
-							m->pl[n0%2]->state = Playing;
-							chanprint(m->pl[(n0+1)%2]->io.out, "wait\n");
-							broadcast(&stands, "plays %d\n", n0%2);
+								fprint(2, "let the game begin: %s plays, %s waits\n", m->pl[n0&1]->name, m->pl[(n0+1)&1]->name);
+							chanprint(m->pl[n0&1]->io.out, "play\n");
+							m->pl[n0&1]->state = Playing;
+							chanprint(m->pl[(n0+1)&1]->io.out, "wait\n");
+							broadcast(&stands, "plays %d\n", n0&1);
 						}
 					}
 				break;
