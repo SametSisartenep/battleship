@@ -132,8 +132,9 @@ menulist_draw(Menulist *ml, Image *dst)
 		er.max.y = er.min.y + font->height+Vspace;
 	}
 	if(i == 0){
+		width = stringwidth(font, none);
 		draw(dst, er, display->white, nil, ZP);
-		string(dst, er.min, display->black, ZP, font, none);
+		string(dst, addpt(er.min, Pt(Dx(er)/2 - width/2,0)), display->black, ZP, font, none);
 	}
 
 	/* draw scroll */
