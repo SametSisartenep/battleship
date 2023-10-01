@@ -68,10 +68,16 @@ menulist_update(Menulist *ml, Mousectl *mc, Channel *drawchan)
 	/* redundant from bts.c:/^mouse\(, but it's necessary to avoid overdrawing */
 	static Mouse oldm;
 	static ulong lastlmbms;
+	Rectangle r;
 	int selected;
 
+	if(ml->nentries < 1)
+		return -1;
+
+	r = ml->nentries < Maxvisitems? ml->r: Rpt(ml->sr.min, ml->r.max);
+
 	selected = -1;
-	if(ptinrect(mc->xy, Rpt(ml->sr.min, ml->r.max))){
+	if(ptinrect(mc->xy, r)){
 		if(ptinrect(mc->xy, ml->r)){
 			/* item highlighting and selection */
 			ml->high = ml->off + (mc->xy.y - ml->r.min.y)/(font->height+Vspace);
