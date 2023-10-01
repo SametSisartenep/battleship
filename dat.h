@@ -37,6 +37,11 @@ enum {
 		Borderwidth+MAPH*TH+Borderwidth+
 		Boardmargin,
 
+	SBG0 = 0,
+	SBG1,
+	SBG2,
+	NSOUNDS,
+
 	KB = 1024,
 	BY2MAP = (TBITS*MAPW*MAPH+7)/8,
 };

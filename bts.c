@@ -1,5 +1,6 @@
 #include <u.h>
 #include <libc.h>
+#include <bio.h>
 #include <thread.h>
 #include <draw.h>
 #include <mouse.h>
@@ -8,6 +9,7 @@
 #include <geometry.h>
 #include "dat.h"
 #include "fns.h"
+#include "mixer.h"
 
 enum {
 	PCBlack,
@@ -137,6 +139,7 @@ RFrame worldrf;
 Image *pal[NCOLORS];
 Image *screenb;
 Image *tiletab[NTILES];
+AudioSource *playlist[NSOUNDS];
 Board alienboard;
 Board localboard;
 Ship armada[NSHIPS];
@@ -538,6 +541,26 @@ initarmada(void)
 	}
 }
 
+void
+initsound(void)
+{
+	audio_init(44100);
+	audio_set_master_gain(0.5);
+
+	playlist[SBG0] = audio_new_source_from_mp3file("assets/sfx/bg0.mp3");
+	if(playlist[SBG0] == nil)
+		sysfatal("audio_new_source_from_mp3file: %r");
+	playlist[SBG1] = audio_new_source_from_mp3file("assets/sfx/bg1.mp3");
+	if(playlist[SBG1] == nil)
+		sysfatal("audio_new_source_from_mp3file: %r");
+	playlist[SBG2] = audio_new_source_from_mp3file("assets/sfx/bg2.mp3");
+	if(playlist[SBG2] == nil)
+		sysfatal("audio_new_source_from_mp3file: %r");
+
+	audio_play(playlist[SBG0]);
+	audio_set_loop(playlist[SBG0], 1);
+}
+
 int
 confirmdone(Mousectl *mc)
 {
@@ -917,6 +940,24 @@ processcmd(char *cmd)
 }
 
 void
+soundproc(void *)
+{
+	Biobuf *aout;
+	uchar adata[512];
+
+	threadsetname("soundproc");
+
+	aout = Bopen("/dev/audio", OWRITE);
+	if(aout == nil)
+		sysfatal("Bopen: %r");
+
+	for(;;){
+		audio_process((void*)adata, sizeof(adata)/2);
+		Bwrite(aout, adata, sizeof adata);
+	}
+}
+
+void
 netrecvthread(void *arg)
 {
 	Ioproc *io;
@@ -988,16 +1029,6 @@ threadmain(int argc, char *argv[])
 	if(argc != 1)
 		usage();
 
-	addr = netmkaddr(argv[0], "tcp", "3047");
-	if(debug)
-		fprint(2, "connecting to %s\n", addr);
-
-	fd = dial(addr, nil, nil, nil);
-	if(fd < 0)
-		sysfatal("dial: %r");
-	else if(debug)
-		fprint(2, "line established\n");
-
 	snprint(winspec, sizeof winspec, "-dx %d -dy %d", SCRW, SCRH);
 	if(newwindow(winspec) < 0)
 		sysfatal("newwindow: %r");
@@ -1033,6 +1064,18 @@ threadmain(int argc, char *argv[])
 	game.state = Waiting0;
 
 	/* TODO add sfx */
+	initsound();
+	proccreate(soundproc, nil, mainstacksize);
+
+	addr = netmkaddr(argv[0], "tcp", "3047");
+	if(debug)
+		fprint(2, "connecting to %s\n", addr);
+
+	fd = dial(addr, nil, nil, nil);
+	if(fd < 0)
+		sysfatal("dial: %r");
+	else if(debug)
+		fprint(2, "line established\n");
 
 	drawchan = chancreate(sizeof(void*), 1);
 	ingress = chancreate(sizeof(char*), 1);

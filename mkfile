@@ -11,10 +11,12 @@ OFILES=\
 	parse.$O\
 	util.$O\
 	menulist.$O\
+	mixer.$O\
 
 HFILES=\
 	dat.h\
 	fns.h\
+	mixer.h\
 
 </sys/src/cmd/mkmany
 
