@@ -74,7 +74,7 @@ menulist_update(Menulist *ml, Mousectl *mc, Channel *drawchan)
 	if(ml->nentries < 1)
 		return -1;
 
-	r = ml->nentries < Maxvisitems? ml->r: Rpt(ml->sr.min, ml->r.max);
+	r = ml->nentries > Maxvisitems? Rpt(ml->sr.min, ml->r.max): ml->r;
 
 	selected = -1;
 	if(ptinrect(mc->xy, r)){
