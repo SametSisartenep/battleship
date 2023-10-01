@@ -1063,7 +1063,6 @@ threadmain(int argc, char *argv[])
 	matches = newmenulist(14*font->height, "ongoing matches");
 	game.state = Waiting0;
 
-	/* TODO add sfx */
 	initsound();
 	proccreate(soundproc, nil, mainstacksize);
 

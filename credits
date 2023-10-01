@@ -1,0 +1,16 @@
+assets/font/gunmetal
+	“gunmetal.ttf”, by Digital Graphic Labs
+assets/sfx/bg0.mp3
+	“The Battle Between Scorpio And Orion.wav”, by MATRIXXX (aka Lil Mati), 2020
+assets/sfx/bg1.mp3
+	“Creepy Ambient (107 bpm).wav”, by SoundFlakes, 2017
+assets/sfx/bg2.mp3
+	“Space Emergency.mp3”, by SoundFlakes, 2019
+assets/sfx/victory.mp3
+	“Epic Action Theme”, by BloodPixelHero, 2022
+assets/sfx/defeat.mp3
+	“Futuristic loop for shooter game or espionage theme”, by Destructo20, 2023
+ttfs(1), tocursor(1)
+	by sigrid. used to generate the fonts and cursor bitmaps
+cmixer
+	by rxi, 2017. used as a (very educational) basis for the current mixer
