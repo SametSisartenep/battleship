@@ -18,29 +18,11 @@ enum {
 	AUDIO_EVENT_REWIND
 };
 
-typedef struct Wav Wav;
-typedef struct WavStream WavStream;
 typedef struct Pcm Pcm;
 typedef struct AudioEvent AudioEvent;
 typedef struct AudioSourceInfo AudioSourceInfo;
 typedef struct AudioSource AudioSource;
 typedef struct Mixer Mixer;
-
-struct Wav
-{
-	void *data;
-	int bitdepth;
-	int samplerate;
-	int channels;
-	int length;
-};
-
-struct WavStream
-{
-	Wav wav;
-	void *data;
-	int idx;
-};
 
 struct Pcm
 {
