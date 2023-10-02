@@ -40,6 +40,10 @@ enum {
 	SBG0 = 0,
 	SBG1,
 	SBG2,
+	SCANNON,
+	SWATER,
+	SVICTORY,
+	SDEFEAT,
 	NSOUNDS,
 
 	KB = 1024,

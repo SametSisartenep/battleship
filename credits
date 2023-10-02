@@ -6,6 +6,10 @@ assets/sfx/bg1.mp3
 	“Creepy Ambient (107 bpm).wav”, by SoundFlakes, 2017
 assets/sfx/bg2.mp3
 	“Space Emergency.mp3”, by SoundFlakes, 2019
+assets/sfx/cannon.mp3
+	“Ship artillery blast classic.wav”, by CGEffex, 2010
+assets/sfx/water.mp3
+	“Water Explosion”, by Sheyvan, 2020
 assets/sfx/victory.mp3
 	“Epic Action Theme”, by BloodPixelHero, 2022
 assets/sfx/defeat.mp3
