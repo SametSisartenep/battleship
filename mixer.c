@@ -3,14 +3,13 @@
  */
 #include <u.h>
 #include <libc.h>
-#include <bio.h>
 #include <thread.h>
 #include "mixer.h"
 
 static Mixer mixer;
 
 
-static int wav_init(AudioSourceInfo*, void*, int, int);
+static int wav_init(AudioSourceInfo*, int);
 static int mp3_init(AudioSourceInfo*, int);
 
 static int
@@ -250,90 +249,11 @@ audio_new_source(AudioSourceInfo *info)
 	return src;
 }
 
-static int
-check_header(void *data, int size, char *str, int offset)
-{
-	int len;
-
-	len = strlen(str);
-	return size >= offset + len &&
-		memcmp((char*)data + offset, str, len) == 0;
-}
-
-static AudioSource *
-new_source_from_mem(void *data, int size, int ownsdata)
+AudioSource *
+audio_new_source_from_file(char *path)
 {
 	AudioSourceInfo info;
-
-	if(check_header(data, size, "WAVE", 8)){
-		if(wav_init(&info, data, size, ownsdata) < 0)
-			return nil;
-		return audio_new_source(&info);
-	}
-
-	werrstr("unknown format or invalid data");
-	return nil;
-}
-
-static void *
-load_file(char *filename, int *size)
-{
-	Biobuf *fp;
-	void *data;
-	int n;
-
-	fp = Bopen(filename, OREAD);
-	if(fp == nil)
-		return nil;
-
-	Bseek(fp, 0, 2);
-	*size = Boffset(fp);
-	Bseek(fp, 0, 0);
-
-	data = malloc(*size);
-	if(data == nil){
-		Bterm(fp);
-		return nil;
-	}
-	n = Bread(fp, data, *size);
-	Bterm(fp);
-	if(n != *size){
-		free(data);
-		return nil;
-	}
-
-	return data;
-}
-
-AudioSource *
-audio_new_source_from_file(char *filename)
-{
-	int size;
-	AudioSource *src;
-	void *data;
-
-	/* Load file into memory */
-	data = load_file(filename, &size);
-	if(data == nil){
-		werrstr("could not load file");
-		return nil;
-	}
-
-	/* Try to load and return */
-	src = new_source_from_mem(data, size, 1);
-	if(src == nil){
-		free(data);
-		return nil;
-	}
-
-	return src;
-}
-
-AudioSource *
-audio_new_source_from_mp3file(char *path)
-{
-	AudioSourceInfo info;
-	uchar buf[3];
+	uchar buf[12];
 	int fd;
 
 	fd = open(path, OREAD);
@@ -343,25 +263,24 @@ audio_new_source_from_mp3file(char *path)
 	memset(buf, 0, sizeof buf);
 	readn(fd, buf, sizeof buf);
 	seek(fd, 0, 0);
-	if(memcmp(buf, "ID3", 3) != 0 && (buf[0] != 0xFF || buf[1] != 0xFB)){
-		werrstr("bad mp3 file");
-		close(fd);
-		return nil;
-	}
-
-	if(mp3_init(&info, fd) < 0){
+	if(memcmp(buf, "ID3", 3) == 0 || (buf[0] == 0xFF && buf[1] == 0xFB)){
+		if(mp3_init(&info, fd) < 0){
+			close(fd);
+			return nil;
+		}
+	}else if(memcmp(buf+8, "WAVE", 4) == 0){
+		if(wav_init(&info, fd) < 0){
+			close(fd);
+			return nil;
+		}
+	}else{
+		werrstr("unsupported file format");
 		close(fd);
 		return nil;
 	}
 	close(fd);
 
 	return audio_new_source(&info);
-}
-
-AudioSource *
-audio_new_source_from_mem(void *data, int size)
-{
-	return new_source_from_mem(data, size, 0);
 }
 
 void
@@ -472,184 +391,6 @@ audio_stop(AudioSource *src)
 	src->rewind = 1;
 }
 
-/*
- * Wav stream processing
- */
-
-static char *
-find_subchunk(char *data, int len, char *id, int *size)
-{
-	/* TODO : Error handling on malformed wav file */
-	int idlen;
-	char *p;
-
-	idlen = strlen(id);
-	p = data+12;
-next:
-	*size = *((u32int*)(p+4));
-	if(memcmp(p, id, idlen) != 0){
-		p += 8 + *size;
-		if(p > data + len)
-			return nil;
-		goto next;
-	}
-	return p+8;
-}
-
-static int
-read_wav(Wav *w, void *data, int len)
-{
-	uint format, channels, samplerate, bitdepth;
-	int sz;
-	char *p;
-
-	p = data;
-	memset(w, 0, sizeof(*w));
-
-	/* Check header */
-	if(memcmp(p, "RIFF", 4) != 0 || memcmp(p+8, "WAVE", 4) != 0){
-		werrstr("bad wav header");
-		return -1;
-	}
-
-	/* Find fmt subchunk */
-	p = find_subchunk(data, len, "fmt", &sz);
-	if(p == nil){
-		werrstr("no fmt subchunk");
-		return -1;
-	}
-
-	/* Load fmt info */
-	format		= *((u16int*)(p));
-	channels	= *((u16int*)(p+2));
-	samplerate	= *((u32int*)(p+4));
-	bitdepth	= *((u16int*)(p+14));
-
-	if(format != 1){
-		werrstr("unsupported format");
-		return -1;
-	}
-	if(channels == 0 || samplerate == 0 || bitdepth == 0){
-		werrstr("bad format");
-		return -1;
-	}
-	if(channels > 2 || (bitdepth != 16 && bitdepth != 8)){
-		werrstr("unsupported wav format");
-		return -1;
-	}
-
-	/* Find data subchunk */
-	p = find_subchunk(data, len, "data", &sz);
-	if(p == nil){
-		werrstr("no data subchunk");
-		return -1;
-	}
-
-	/* Init struct */
-	w->data = (void*)p;
-	w->samplerate = samplerate;
-	w->channels = channels;
-	w->length = (sz / (bitdepth/8)) / channels;
-	w->bitdepth = bitdepth;
-	return 0;
-}
-
-static void
-wav_handler(AudioEvent *e)
-{
-	int x, n;
-	s16int *dst;
-	WavStream *s;
-	int len;
-
-	s = e->udata;
-
-	switch(e->type){
-	case AUDIO_EVENT_DESTROY:
-		free(s->data);
-		free(s);
-		break;
-	case AUDIO_EVENT_SAMPLES:
-		dst = e->buffer;
-		len = e->length/2;
-fill:
-		n = min(len, s->wav.length - s->idx);
-		len -= n;
-		switch(s->wav.bitdepth){
-		case 16:
-			if(s->wav.channels == 1){
-				while(n--){
-					dst[0] = dst[1] = ((s16int*)s->wav.data)[s->idx];
-					dst += 2;
-					s->idx++;
-				}
-			}else if(s->wav.channels == 2){
-				while(n--){
-					x = s->idx * 2;
-					dst[0] = ((s16int*)s->wav.data)[x];
-					dst[1] = ((s16int*)s->wav.data)[x+1];
-					dst += 2;
-					s->idx++;
-				}
-			}
-			break;
-		case 8:
-			if(s->wav.channels == 1){
-				while(n--){
-					dst[0] = dst[1] = (((uchar*)s->wav.data)[s->idx] - 128) << 8;
-					dst += 2;
-					s->idx++;
-				}
-			}else if(s->wav.channels == 2){
-				while(n--){
-					x = s->idx * 2;
-					dst[0] = (((uchar*)s->wav.data)[x] - 128) << 8;
-					dst[1] = (((uchar*)s->wav.data)[x+1] - 128) << 8;
-					dst += 2;
-					s->idx++;
-				}
-			}
-			break;
-		}
-		/* Loop back and continue filling buffer if we didn't fill the buffer */
-		if(len > 0){
-			s->idx = 0;
-			goto fill;
-		}
-		break;
-	case AUDIO_EVENT_REWIND:
-		s->idx = 0;
-		break;
-	}
-}
-
-static int
-wav_init(AudioSourceInfo *info, void *data, int len, int ownsdata)
-{
-	WavStream *stream;
-
-	stream = malloc(sizeof *stream);
-	if(stream == nil){
-		werrstr("allocation failed");
-		return -1;
-	}
-	memset(stream, 0, sizeof *stream);
-
-	if(read_wav(&stream->wav, data, len) < 0)
-		return -1;
-
-	if(ownsdata)
-		stream->data = data;
-	stream->idx = 0;
-
-	info->udata = stream;
-	info->handler = wav_handler;
-	info->samplerate = stream->wav.samplerate;
-	info->length = stream->wav.length;
-
-	return 0;
-}
-
 static void
 pcm_handler(AudioEvent *e)
 {
@@ -671,7 +412,7 @@ Fillbuf:
 		n = min(len, pcm->len - pcm->off);
 		len -= n;
 		while(n--){
-			i = pcm->off * 2;
+			i = 2*pcm->off;
 			dst[0] = ((s16int*)pcm->data)[i];
 			dst[1] = ((s16int*)pcm->data)[i+1];
 			dst += 2;
@@ -724,6 +465,80 @@ mp3_init(AudioSourceInfo *info, int fd)
 	pfd[2] = fd;
 
 	procrfork(mp3decproc, pfd, mainstacksize, RFFDG|RFNAMEG|RFNOTEG);
+	close(pfd[1]);
+	while((n = read(pfd[0], buf, sizeof buf)) > 0){
+		data = realloc(data, len+n);
+		if(data == nil){
+			werrstr("realloc: %r");
+			return -1;
+		}
+		memmove((uchar*)data+len, buf, n);
+		len += n;
+	}
+	close(pfd[0]);
+
+	pcm = malloc(sizeof *pcm);
+	if(pcm == nil){
+		free(data);
+		werrstr("malloc: %r");
+		return -1;
+	}
+	pcm->depth = 16;
+	pcm->chans = 2;
+	pcm->rate = 44100;
+	pcm->data = data;
+	pcm->len = len/(pcm->depth/8)/pcm->chans;
+
+	info->udata = pcm;
+	info->handler = pcm_handler;
+	info->samplerate = pcm->rate;
+	info->length = pcm->len;
+
+//	fprint(2, "pcm 0x%p:\ndata 0x%p\nlen %d\ndepth %d\nchans %d\nrate %d\n",
+//		pcm, pcm->data, pcm->len, pcm->depth, pcm->chans, pcm->rate);
+//	fprint(2, "info 0x%p:\nudata 0x%p\nhandler 0x%p\nsamplerate %d\nlength %d\n",
+//		info, info->udata, info->handler, info->samplerate, info->length);
+
+	return 0;
+}
+
+/* TODO generalize the *decproc and *_init procedures */
+static void
+wavdecproc(void *arg)
+{
+	int *pfd, fd;
+
+	pfd = arg;
+	fd = pfd[2];
+
+	close(pfd[0]);
+	dup(fd, 0);
+	close(fd);
+	dup(pfd[1], 1);
+	close(pfd[1]);
+
+	execl("/bin/audio/wavdec", "wavdec", nil);
+	threadexitsall("execl: %r");
+}
+
+static int
+wav_init(AudioSourceInfo *info, int fd)
+{
+	Pcm *pcm;
+	void *data;
+	uchar buf[1024];
+	int pfd[3], n, len;
+
+	data = nil;
+	len = 0;
+
+	if(pipe(pfd) < 0){
+		werrstr("pipe: %r");
+		return -1;
+	}
+	pfd[2] = fd;
+
+	procrfork(wavdecproc, pfd, mainstacksize, RFFDG|RFNAMEG|RFNOTEG);
 	close(pfd[1]);
 	while((n = read(pfd[0], buf, sizeof buf)) > 0){
 		data = realloc(data, len+n);

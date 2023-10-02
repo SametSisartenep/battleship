@@ -94,7 +94,6 @@ struct AudioSource
 
 struct Mixer
 {
-	char *lasterror;		/* Last error message */
 	AudioSource *sources;		/* Linked list of active (playing) sources */
 	s32int buffer[MIXBUFSIZE];	/* Internal master buffer */
 	int samplerate;			/* Master samplerate */
@@ -108,8 +107,6 @@ void audio_process(s16int*, int);
 
 AudioSource *audio_new_source(AudioSourceInfo*);
 AudioSource *audio_new_source_from_file(char*);
-AudioSource *audio_new_source_from_mp3file(char*);
-AudioSource *audio_new_source_from_mem(void*, int);
 void audio_destroy_source(AudioSource*);
 double audio_get_length(AudioSource*);
 double audio_get_position(AudioSource*);
