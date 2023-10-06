@@ -151,6 +151,7 @@ MatchInfo match; /* of which we are an spectator */
 
 struct {
 	int state;
+	int mode;
 } game;
 struct {
 	Image *c; /* color */
@@ -639,6 +640,7 @@ lmb(Mousectl *mc)
 
 		audio_play(playlist[SCANNON]);
 		cell = toboard(&alienboard, mc->xy);
+		/* TODO check if we already shot at that cell */
 		chanprint(egress, "shoot %s\n", cell2coords(cell));
 		lastshot = cell;
 		break;
@@ -797,7 +799,7 @@ key(Rune r)
 	case 'p':
 		if(game.state != Waiting0)
 			break;
-		chanprint(egress, "play\n");
+		chanprint(egress, "play %d\n", game.mode);
 		break;
 	case 'w':
 		if(game.state != Waiting0)
@@ -1040,7 +1042,7 @@ netsendthread(void *arg)
 void
 usage(void)
 {
-	fprint(2, "usage: %s [-d] addr\n", argv0);
+	fprint(2, "usage: %s [-da] addr\n", argv0);
 	threadexitsall("usage");
 }
 
@@ -1058,6 +1060,9 @@ threadmain(int argc, char *argv[])
 	ARGBEGIN{
 	case 'd':
 		debug++;
+		break;
+	case 'a':
+		game.mode = GMPvAI;
 		break;
 	default: usage();
 	}ARGEND

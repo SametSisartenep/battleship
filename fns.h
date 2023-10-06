@@ -38,3 +38,9 @@ void delmenulist(Menulist*);
  */
 Cmdbuf *parsecmd(char*, int);
 Cmdtab *lookupcmd(Cmdbuf*, Cmdtab*, int);
+
+/*
+ * andy
+ */
+Andy *newandy(Player*);
+void freeandy(Andy*);

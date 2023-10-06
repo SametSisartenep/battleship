@@ -18,12 +18,19 @@ enum {
 	OH, /* horizontal */
 	OV, /* vertical */
 
+	GMPvP = 0,
+	GMPvAI,
+
 	Waiting0 = 0,
 	Watching,
 	Ready,
 	Outlaying,
 	Waiting,
 	Playing,
+
+	ASearching = 0,
+	ACalibrating,
+	ABombing,
 
 	Boardmargin = 50,
 	TW = 16,
@@ -55,6 +62,7 @@ typedef struct Map Map;
 typedef struct Board Board;
 typedef struct Chanpipe Chanpipe;
 typedef struct Player Player;
+typedef struct Andy Andy;
 typedef struct Match Match;
 typedef struct Msg Msg;
 typedef struct Stands Stands;
@@ -94,10 +102,30 @@ struct Player
 	Map;
 	char name[8+1];
 	int state;
+	int gamemode;
 	Match *battle;
 	NetConnInfo *nci;
 	Chanpipe io;
 	Channel *ctl;
+};
+
+struct Andy
+{
+	Map;		/* of the enemy */
+	Player *ego;
+	int state;
+	Point2 lastshot;
+	Point2 firsthit;
+	Point2 passdir;	/* direction of current pass */
+	int ntries;	/* attempts left to find the direction */
+	int passes;	/* remaining passes (one per direction) */
+
+	void (*layout)(Andy*, Msg*);
+	void (*shoot)(Andy*, Msg*);
+	void (*engage)(Andy*);
+	void (*disengage)(Andy*);
+	void (*registerhit)(Andy*);
+	void (*registermiss)(Andy*);
 };
 
 struct Match

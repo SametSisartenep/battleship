@@ -19,7 +19,7 @@ enum {
 };
 Cmdtab clcmd[] = {
 	CMid,		"id",		2,
-	CMplay, 	"play",		1,
+	CMplay, 	"play",		2,
 	CMlayout, 	"layout",	2,
 	CMshoot, 	"shoot",	2,
 	CMgetmatches,	"watch",	1,
@@ -249,27 +249,27 @@ netsendthread(void *arg)
 void
 playerproc(void *arg)
 {
-	Player *my;
+	Player *p;
 	Match *m;
 	Cmdbuf *cb;
 	Cmdtab *ct;
 	char *s;
 	int mid;
 
-	my = arg;
+	p = arg;
 
-	threadsetname("player %s", my->nci->raddr);
+	threadsetname("player %s", p->nci->raddr);
 
-	threadsetgrp(my->io.fd);
-	threadcreate(netrecvthread, &my->io, mainstacksize);
-	threadcreate(netsendthread, &my->io, mainstacksize);
+	threadsetgrp(p->io.fd);
+	threadcreate(netrecvthread, &p->io, mainstacksize);
+	threadcreate(netsendthread, &p->io, mainstacksize);
 
-	chanprint(my->io.out, "id\n");
+	chanprint(p->io.out, "id\n");
 
 	enum { NETIN, CTL, NONE };
 	Alt a[] = {
-	 [NETIN]	{my->io.in, &s, CHANRCV},
-	 [CTL]		{my->ctl, &s, CHANRCV},
+	 [NETIN]	{p->io.in, &s, CHANRCV},
+	 [CTL]		{p->ctl, &s, CHANRCV},
 	 [NONE]		{nil, nil, CHANEND}
 	};
 	for(;;)
@@ -283,35 +283,36 @@ playerproc(void *arg)
 			if(ct == nil)
 				goto Nocmd;
 
-			if(my->name[0] == 0){
+			if(p->name[0] == 0){
 				if(ct->index == CMid && strlen(cb->f[1]) > 0){
-					snprint(my->name, sizeof my->name, "%s", cb->f[1]);
-					sendmatches(my->io.out);
+					snprint(p->name, sizeof p->name, "%s", cb->f[1]);
+					sendmatches(p->io.out);
 				}else
-					chanprint(my->io.out, "id\n");
+					chanprint(p->io.out, "id\n");
 			}else
-				switch(my->state){
+				switch(p->state){
 				case Waiting0:
-					if(ct->index == CMplay)
-						sendp(playerq, my);
-					else if(ct->index == CMgetmatches){
-						sendmatches(my->io.out);
+					if(ct->index == CMplay){
+						p->gamemode = strtoul(cb->f[1], nil, 10);
+						sendp(playerq, p);
+					}else if(ct->index == CMgetmatches){
+						sendmatches(p->io.out);
 					}else if(ct->index == CMwatch){
 						mid = strtoul(cb->f[1], nil, 10);
 						m = getmatch(mid);
 						if(m == nil)
-							chanprint(my->io.out, "no such match\n");
+							chanprint(p->io.out, "no such match\n");
 						else
-							sendp(m->ctl, newmsg(my, estrdup("take seat")));
+							sendp(m->ctl, newmsg(p, estrdup("take seat")));
 					}
 					break;
 				case Watching:
 					if(ct->index == CMleave)
-						sendp(my->battle->ctl, newmsg(my, estrdup("leave seat")));
+						sendp(p->battle->ctl, newmsg(p, estrdup("leave seat")));
 					break;
 				default:
-					if(my->battle != nil)
-						sendp(my->battle->data, newmsg(my, estrdup(s)));
+					if(p->battle != nil)
+						sendp(p->battle->data, newmsg(p, estrdup(s)));
 				}
 Nocmd:
 			free(cb);
@@ -319,15 +320,15 @@ Nocmd:
 			break;
 		case CTL:
 			if(s == nil){ /* cable cut */
-				switch(my->state){
+				switch(p->state){
 				case Waiting0:
-					freeplayer(my);
+					freeplayer(p);
 					break;
 				case Ready:
-					sendp(mmctl, newmsg(my, estrdup("player left")));
+					sendp(mmctl, newmsg(p, estrdup("player left")));
 					break;
 				default:
-					sendp(my->battle->ctl, newmsg(my, estrdup("player left")));
+					sendp(p->battle->ctl, newmsg(p, estrdup("player left")));
 				}
 				goto End;
 			}
@@ -342,8 +343,74 @@ End:
 }
 
 void
-aiproc(void *)
+aiproc(void *arg)
 {
+	/* XXX this is a subset of those at bts.c:/^Cmdtab svcmd */
+	enum {
+		ACMlayout,
+		ACMplay,
+		ACMwehit,
+		ACMwemiss,
+		ACMwin,
+		ACMlose,
+	};
+	Cmdtab svcmd[] = {
+		ACMlayout,	"layout",	1,
+		ACMplay,	"play",		1,
+		ACMwehit,	"hit",		1,
+		ACMwemiss,	"miss",		1,
+		ACMwin,		"win",		1,
+		ACMlose,	"lose",		1,
+	};
+	Andy *ai;
+	Cmdbuf *cb;
+	Cmdtab *ct;
+	char *s;
+
+	ai = arg;
+
+	threadsetname("andy %s", ai->ego->name);
+
+	enum { NETIN, CTL, NONE };
+	Alt a[] = {
+	 [NETIN]	{ai->ego->io.out, &s, CHANRCV},
+	 [CTL]		{ai->ego->ctl, &s, CHANRCV},
+	 [NONE]		{nil, nil, CHANEND}
+	};
+	for(;;)
+		switch(alt(a)){
+		case NETIN:
+			if(debug)
+				fprint(2, "[%d] bot rcvd '%s'\n", getpid(), s);
+
+			cb = parsecmd(s, strlen(s));
+			ct = lookupcmd(cb, svcmd, nelem(svcmd));
+			if(ct == nil)
+				goto Nocmd;
+
+//			sleep(ntruerand(5000));
+			switch(ct->index){
+			case ACMlayout: ai->layout(ai, newmsg(ai->ego, nil)); break;
+			case ACMplay: ai->shoot(ai, newmsg(ai->ego, nil)); break;
+			case ACMwehit: ai->registerhit(ai); break;
+			case ACMwemiss: ai->registermiss(ai); break;
+			case ACMwin:
+			case ACMlose: goto End;
+			}
+Nocmd:
+			free(cb);
+			free(s);
+			break;
+		case CTL:
+			free(s);
+			break;
+		}
+End:
+	freeplayer(ai->ego);
+	freeandy(ai);
+	if(debug)
+		fprint(2, "[%d] andy retired\n", getpid());
+	threadexits(nil);
 }
 
 void
@@ -365,7 +432,9 @@ battleproc(void *arg)
 	m = arg;
 	memset(&stands, 0, sizeof stands);
 
-	threadsetname("battleproc [%d] %s ↔ %s", m->id, m->pl[0]->nci->raddr, m->pl[1]->nci->raddr);
+	threadsetname("battleproc [%d] %s ↔ %s", m->id,
+		m->pl[0]->nci != nil? m->pl[0]->nci->raddr: "andy",
+		m->pl[1]->nci != nil? m->pl[1]->nci->raddr: "andy");
 
 	chanprint(m->pl[0]->io.out, "oid %s\n", m->pl[1]->name);
 	chanprint(m->pl[1]->io.out, "oid %s\n", m->pl[0]->name);
@@ -398,7 +467,7 @@ battleproc(void *arg)
 				if(ct->index == CMlayout)
 					if(gettokens(cb->f[1], coords, nelem(coords), ",") == nelem(coords)){
 						if(debug)
-							fprint(2, "rcvd layout from %s @ %s\n", p->name, p->nci->raddr);
+							fprint(2, "rcvd layout from %s\n", p->name);
 						for(i = 0; i < nelem(coords); i++){
 							cell = coords2cell(coords[i]);
 							orient = coords[i][strlen(coords[i])-1] == 'h'? OH: OV;
@@ -433,7 +502,7 @@ battleproc(void *arg)
 						chanprint(p->io.out, "hit\n");
 						chanprint(op->io.out, "hit %s\n", cell2coords(cell));
 						broadcast(&stands, "hit %d %s\n", p == m->pl[0]? 0: 1, cell2coords(cell));
-						if(countshipcells(op) < (debug? 17: 1)){
+						if(countshipcells(op) < (debug? 12: 1)){
 							chanprint(p->io.out, "win\n");
 							chanprint(op->io.out, "lose\n");
 							p->state = Waiting0;
@@ -456,10 +525,10 @@ Swapturn:
 						p->state = Waiting;
 						op->state = Playing;
 						broadcast(&stands, "plays %d\n", op == m->pl[0]? 0: 1);
+						if(debug)
+							fprint(2, "%s plays, %s waits\n", op->name, p->name);
 						break;
 					}
-					if(debug)
-						fprint(2, "%s plays, %s waits\n", op->name, p->name);
 				}
 				break;
 			}
@@ -520,7 +589,7 @@ matchmaker(void *)
 {
 	Msg *msg;
 	Match *m;
-	Player *pl[2];
+	Player *pl[2], *bot;
 	int i;
 
 	threadsetname("matchmaker");
@@ -543,16 +612,33 @@ matchmaker(void *)
 
 			chanprint(pl[i]->io.out, "queued\n");
 
-			if(++i > 1){
-				m = newmatch(pl[0], pl[1]);
+			switch(pl[i]->gamemode){
+			case GMPvP:
+				if(++i > 1){
+					m = newmatch(pl[0], pl[1]);
+					addmatch(m);
+					pl[0]->battle = m;
+					pl[1]->battle = m;
+					i = 0;
+	
+					proccreate(battleproc, m, mainstacksize);
+				}
+				a[QUE].v = &pl[i];
+				break;
+			case GMPvAI:
+				bot = newplayer(-1);
+				memset(bot->map, Twater, MAPW*MAPH);
+
+				m = newmatch(pl[i], bot);
 				addmatch(m);
-				pl[0]->battle = m;
-				pl[1]->battle = m;
+				pl[i]->battle = m;
+				bot->battle = m;
 				i = 0;
 
+				proccreate(aiproc, newandy(bot), mainstacksize);
 				proccreate(battleproc, m, mainstacksize);
+				break;
 			}
-			a[QUE].v = &pl[i];
 			break;
 		case CTL:
 			if(debug) fprint(2, "matchmaker rcvd '%s' from p(fd=%d)\n", msg->body, msg->from->io.fd);

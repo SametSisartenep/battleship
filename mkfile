@@ -10,6 +10,7 @@ OFILES=\
 	alloc.$O\
 	parse.$O\
 	util.$O\
+	andy.$O\
 	menulist.$O\
 	mixer.$O\
 
