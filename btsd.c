@@ -559,11 +559,14 @@ Nocmd:
 				p->battle = m;
 				chanprint(p->io.out, "watching %d %s %s\n",
 					m->id, m->pl[0]->name, m->pl[1]->name);
-				for(i = 0; i < nelem(m->pl); i++)
+				for(i = 0; i < nelem(m->pl); i++){
 					if(m->pl[i]->state != Outlaying){
 						bitpackmap(buf, sizeof buf, m->pl[i]);
 						chanprint(p->io.out, "outlayed %d %.*[\n", i, sizeof buf, buf);
 					}
+					if(m->pl[i]->state == Playing)
+						chanprint(p->io.out, "plays %d\n", i);
+				}
 			}else if(strcmp(msg->body, "leave seat") == 0){
 				leaveseat(&stands, p);
 				p->state = Waiting0;
@@ -619,7 +622,7 @@ matchmaker(void *)
 					pl[0]->battle = m;
 					pl[1]->battle = m;
 					i = 0;
-	
+
 					proccreate(battleproc, m, mainstacksize);
 				}
 				a[QUE].v = &pl[i];

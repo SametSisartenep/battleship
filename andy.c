@@ -1,15 +1,12 @@
 #include <u.h>
 #include <libc.h>
-#include <bio.h>
 #include <thread.h>
 #include <draw.h>
 #include <mouse.h>
-#include <cursor.h>
 #include <keyboard.h>
 #include <geometry.h>
 #include "dat.h"
 #include "fns.h"
-#include "mixer.h"
 
 /* Nexus-9 technology from The Rosen Association */
 
