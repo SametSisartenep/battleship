@@ -1,5 +1,7 @@
 #include <u.h>
 #include <libc.h>
+#include <mp.h>
+#include <libsec.h>
 #include <thread.h>
 #include <draw.h>
 #include <mouse.h>
@@ -33,13 +35,19 @@ static char *statenametab[] = {
 };
 
 
+int
+isoob(Point2 cell)
+{
+	return cell.x < 0 || cell.x >= MAPW ||
+		cell.y < 0 || cell.y >= MAPH;
+}
+
 char *
 cell2coords(Point2 cell)
 {
 	static char s[3+1];
 
-	assert(cell.x >= 0 && cell.x < MAPW
-		&& cell.y >= 0 && cell.y < MAPH);
+	assert(!isoob(cell));
 
 	snprint(s, sizeof s, "%c%d", rowtab[(int)cell.y], (int)cell.x);
 	return s;
@@ -72,6 +80,7 @@ gettile(Map *m, Point2 cell)
 void
 settile(Map *m, Point2 cell, int type)
 {
+	assert(!isoob(cell));
 	m->map[(int)cell.x][(int)cell.y] = type;
 }
 
@@ -84,6 +93,7 @@ settiles(Map *m, Point2 cell, int o, int ncells, int type)
 	sv = o == OH? Vec2(1,0): Vec2(0,1);
 
 	while(ncells-- > 0){
+		assert(!isoob(cell));
 		settile(m, cell, type);
 		cell = addpt2(cell, sv);
 	}
@@ -210,4 +220,18 @@ chanvprint(Channel *c, char *fmt, va_list arg)
 	n = sendp(c, p);
 	yield();	/* let recipient handle message immediately */
 	return n;
+}
+
+ulong
+getrand(ulong max)
+{
+	mpint *n, *r;
+	ulong c;
+
+	n = uitomp(max, nil);
+	r = mpnrand(n, genrandom, nil);
+	c = mptoui(r);
+	mpfree(n);
+	mpfree(r);
+	return c;
 }

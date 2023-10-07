@@ -388,7 +388,6 @@ aiproc(void *arg)
 			if(ct == nil)
 				goto Nocmd;
 
-//			sleep(ntruerand(5000));
 			switch(ct->index){
 			case ACMlayout: ai->layout(ai, newmsg(ai->ego, nil)); break;
 			case ACMplay: ai->shoot(ai, newmsg(ai->ego, nil)); break;

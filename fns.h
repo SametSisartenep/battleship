@@ -11,6 +11,7 @@ Image *eallocimage(Display*, Rectangle, ulong, int, ulong);
 /*
  * util
  */
+int isoob(Point2);
 char *cell2coords(Point2);
 Point2 coords2cell(char*);
 int gettile(Map*, Point2);
@@ -26,6 +27,7 @@ int max(int, int);
 int bitpackmap(uchar*, ulong, Map*);
 int bitunpackmap(Map*, uchar*, ulong);
 int chanvprint(Channel*, char*, va_list);
+ulong getrand(ulong);
 
 /*
  * menulist

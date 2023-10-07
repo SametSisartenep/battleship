@@ -39,7 +39,7 @@ Point2 nwes[] = {
 static char *
 getaname(void)
 {
-	return nametab[ntruerand(nelem(nametab))];
+	return nametab[getrand(nelem(nametab))];
 }
 
 static void
@@ -69,21 +69,21 @@ Retry:
 	switch(a->state){
 	case ASearching:
 		do
-			cell = Pt2(ntruerand(MAPW), ntruerand(MAPH), 1);
+			cell = Pt2(getrand(MAPW), getrand(MAPH), 1);
 		while(gettile(a, cell) != Twater);
 		break;
 	case ACalibrating:
 		do
 			cell = addpt2(a->firsthit, nwes[--a->ntries&3]);
-		while(gettile(a, cell) != Twater && a->ntries > 1);
-		if(a->ntries < 1 && gettile(a, cell) != Twater){
+		while((gettile(a, cell) != Twater || isoob(cell)) && a->ntries > 1);
+		if(gettile(a, cell) != Twater || isoob(cell)){
 			a->disengage(a);
 			goto Retry;
 		}
 		break;
 	case ABombing:
 		cell = addpt2(a->lastshot, a->passdir);
-		if(gettile(a, cell) != Twater){
+		if(gettile(a, cell) != Twater || isoob(cell)){
 			turnaround(a);
 			goto Retry;
 		}
