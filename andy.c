@@ -61,6 +61,7 @@ static void
 andy_shoot(Andy *a, Msg *m)
 {
 	Point2 cell;
+	char buf[3+1];
 
 Retry:
 	switch(a->state){
@@ -86,7 +87,8 @@ Retry:
 		}
 		break;
 	}
-	m->body = smprint("shoot %s", cell2coords(cell));
+	cell2coords(buf, sizeof buf, cell);
+	m->body = smprint("shoot %s", buf);
 	sendp(a->ego->battle->data, m);
 	a->lastshot = cell;
 }

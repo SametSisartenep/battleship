@@ -422,6 +422,7 @@ battleproc(void *arg)
 	Player *p, *op;
 	Stands stands; /* TODO make this a member of Match */
 	uchar buf[BY2MAP];
+	char cbuf[3+1];
 	uint n0;
 
 	Point2 cell;
@@ -499,8 +500,9 @@ battleproc(void *arg)
 					case Tship:
 						settile(op, cell, Thit);
 						chanprint(p->io.out, "hit\n");
-						chanprint(op->io.out, "hit %s\n", cell2coords(cell));
-						broadcast(&stands, "hit %d %s\n", p == m->pl[0]? 0: 1, cell2coords(cell));
+						cell2coords(cbuf, sizeof cbuf, cell);
+						chanprint(op->io.out, "hit %s\n", cbuf);
+						broadcast(&stands, "hit %d %s\n", p == m->pl[0]? 0: 1, cbuf);
 						if(countshipcells(op) < (debug? 12: 1)){
 							chanprint(p->io.out, "win\n");
 							chanprint(op->io.out, "lose\n");
@@ -516,8 +518,9 @@ battleproc(void *arg)
 					case Twater:
 						settile(op, cell, Tmiss);
 						chanprint(p->io.out, "miss\n");
-						chanprint(op->io.out, "miss %s\n", cell2coords(cell));
-						broadcast(&stands, "miss %d %s\n", p == m->pl[0]? 0: 1, cell2coords(cell));
+						cell2coords(cbuf, sizeof cbuf, cell);
+						chanprint(op->io.out, "miss %s\n", cbuf);
+						broadcast(&stands, "miss %d %s\n", p == m->pl[0]? 0: 1, cbuf);
 Swapturn:
 						chanprint(p->io.out, "wait\n");
 						chanprint(op->io.out, "play\n");

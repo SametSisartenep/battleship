@@ -12,7 +12,7 @@ Image *eallocimage(Display*, Rectangle, ulong, int, ulong);
  * util
  */
 int isoob(Point2);
-char *cell2coords(Point2);
+int cell2coords(char*, ulong, Point2);
 Point2 coords2cell(char*);
 int gettile(Map*, Point2);
 void settile(Map*, Point2, int);

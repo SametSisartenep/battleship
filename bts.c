@@ -617,6 +617,7 @@ void
 lmb(Mousectl *mc)
 {
 	Point2 cell;
+	char buf[3+1];
 
 	if(conclusion.s != nil)
 		return;
@@ -641,7 +642,8 @@ lmb(Mousectl *mc)
 		audio_play(playlist[SCANNON]);
 		cell = toboard(&alienboard, mc->xy);
 		/* TODO check if we already shot at that cell */
-		chanprint(egress, "shoot %s\n", cell2coords(cell));
+		cell2coords(buf, sizeof buf, cell);
+		chanprint(egress, "shoot %s\n", buf);
 		lastshot = cell;
 		break;
 	}
@@ -721,8 +723,8 @@ rmb(Mousectl *mc)
 			assert(sizeof buf - n > 1+3+1);
 			if(i != 0)
 				buf[n++] = ',';
-			n += snprint(buf+n, sizeof buf - n, "%s%c",
-				cell2coords(armada[i].p), armada[i].orient == OH? 'h': 'v');
+			n += cell2coords(buf+n, sizeof buf - n, armada[i].p);
+			buf[n++] = armada[i].orient == OH? 'h': 'v';
 		}
 		chanprint(egress, "layout %s\n", buf);
 		layoutdone++;

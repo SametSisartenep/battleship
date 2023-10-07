@@ -10,7 +10,7 @@
 #include "dat.h"
 #include "fns.h"
 
-static char rowtab[] = "abcdefghijklmnopq";
+static char rowtab[] = "abcdefghijklmnopq";	/* |rowtab| = MAPH */
 static int shiplentab[] = {
  [Scarrier]	5,
  [Sbattleship]	4,
@@ -42,15 +42,11 @@ isoob(Point2 cell)
 		cell.y < 0 || cell.y >= MAPH;
 }
 
-char *
-cell2coords(Point2 cell)
+int
+cell2coords(char *buf, ulong len, Point2 cell)
 {
-	static char s[3+1];
-
-	assert(!isoob(cell));
-
-	snprint(s, sizeof s, "%c%d", rowtab[(int)cell.y], (int)cell.x);
-	return s;
+	assert(len >= 3+1 && !isoob(cell));
+	return snprint(buf, len, "%c%d", rowtab[(int)cell.y], (int)cell.x);
 }
 
 Point2
@@ -66,7 +62,7 @@ coords2cell(char *s)
 	cell.y = p-rowtab;
 	cell.x = strtol(s+1, nil, 10);
 
-	assert(cell.x >= 0 && cell.x < MAPW);
+	assert(!isoob(cell));
 
 	return cell;
 }
