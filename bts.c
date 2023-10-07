@@ -643,8 +643,10 @@ lmb(Mousectl *mc)
 		cell = toboard(&alienboard, mc->xy);
 		/* TODO check if we already shot at that cell */
 		cell2coords(buf, sizeof buf, cell);
-		chanprint(egress, "shoot %s\n", buf);
-		lastshot = cell;
+		if(gettile(&alienboard, cell) == Twater){
+			chanprint(egress, "shoot %s\n", buf);
+			lastshot = cell;
+		}
 		break;
 	}
 }
