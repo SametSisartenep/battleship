@@ -43,7 +43,7 @@ getaname(void)
 }
 
 static void
-doanotherpass(Andy *a)
+turnaround(Andy *a)
 {
 	if(--a->passes > 0){
 		a->passdir = mulpt2(a->passdir, -1);
@@ -71,32 +71,27 @@ Retry:
 		do
 			cell = Pt2(ntruerand(MAPW), ntruerand(MAPH), 1);
 		while(gettile(a, cell) != Twater);
-		fprint(2, "[%d] search shot\n", getpid());
 		break;
 	case ACalibrating:
 		do
 			cell = addpt2(a->firsthit, nwes[--a->ntries&3]);
 		while(gettile(a, cell) != Twater && a->ntries > 1);
 		if(a->ntries < 1 && gettile(a, cell) != Twater){
-			fprint(2, "[%d] neverland\n", getpid());
 			a->disengage(a);
 			goto Retry;
 		}
-		fprint(2, "[%d] calibrating shot\n", getpid());
 		break;
 	case ABombing:
 		cell = addpt2(a->lastshot, a->passdir);
 		if(gettile(a, cell) != Twater){
-			doanotherpass(a);
+			turnaround(a);
 			goto Retry;
 		}
-		fprint(2, "[%d] bombing shot\n", getpid());
 		break;
 	}
 	m->body = smprint("shoot %s", cell2coords(cell));
 	sendp(a->ego->battle->data, m);
 	a->lastshot = cell;
-	fprint(2, "[%d] shot enemy\n", getpid());
 }
 
 static void
@@ -106,41 +101,34 @@ andy_engage(Andy *a)
 	a->state = ACalibrating;
 	a->ntries = nelem(nwes);
 	a->passes = 2;
-	fprint(2, "[%d] enemy engaged\n", getpid());
 }
 
 static void
 andy_disengage(Andy *a)
 {
 	a->state = ASearching;
-	fprint(2, "[%d] enemy disengaged\n", getpid());
 }
 
 static void
 andy_registerhit(Andy *a)
 {
-	fprint(2, "[%d] hit enemy\n", getpid());
 	settile(a, a->lastshot, Thit);
 	if(a->state == ASearching)
 		a->engage(a);
 	else if(a->state == ACalibrating){
 		a->passdir = subpt2(a->lastshot, a->firsthit);
 		a->state = ABombing;
-		fprint(2, "[%d] began bombing\n", getpid());
 	}
 }
 
 static void
 andy_registermiss(Andy *a)
 {
-	fprint(2, "[%d] missed enemy\n", getpid());
 	settile(a, a->lastshot, Tmiss);
 	if(a->state == ACalibrating && a->ntries < 1)
 		a->disengage(a);
-	else if(a->state == ABombing){
-		doanotherpass(a);
-		fprint(2, "[%d] bombing pass #%d dir %v\n", getpid(), a->passes, a->passdir);
-	}
+	else if(a->state == ABombing)
+		turnaround(a);
 }
 
 Andy *
