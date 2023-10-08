@@ -49,11 +49,67 @@ turnaround(Andy *a)
 		a->disengage(a);
 }
 
+static int
+between(double n, double min, double max)
+{
+	return n >= min && n < max;
+}
+
+static int
+lineXline(Point2 min0, Point2 max0, Point2 min1, Point2 max1)
+{
+	double a₁, b₁;
+	double a₂, b₂;
+	double det;
+
+	a₁ = max0.y - min0.y;
+	b₁ = min0.x - max0.x;
+
+	a₂ = max1.y - min1.y;
+	b₂ = min1.x - max1.x;
+
+	det = a₁*b₂ - a₂*b₁;
+	if(det == 0){
+		/* do they overlap? */
+		if((min0.x == min1.x && (between(min0.y, min1.y, max1.y) || between(max0.y, min1.y, max1.y))) ||
+			(min0.y == min1.y && (between(min0.x, min1.x, max1.x) || between(max0.x, min1.x, max1.x))))
+			return 1;
+		return 0;
+	}
+	return 1;
+}
+
 static void
 andy_layout(Andy *a, Msg *m)
 {
-	/* TODO write a real layout algorithm */
-	m->body = estrdup("layout f9v,g6v,b12v,c15v,l14v");
+	Point2 cells[NSHIPS], sv[NSHIPS];
+	char buf[NSHIPS*(1+3+1)+1];
+	int i, j, o[NSHIPS], n;
+
+	for(i = 0; i < NSHIPS; i++){
+Retry:
+		cells[i] = Pt2(getrand(MAPW-shiplen(i)), getrand(MAPH-shiplen(i)), 1);
+		o[i] = getrand(1<<20)&1? OH: OV;
+		sv[i] = o[i] == OH? Vec2(1,0): Vec2(0,1);
+		fprint(2, "%d%c ", i, o[i] == OH? 'h': 'v');
+		for(j = 0; j < i; j++)
+			if(lineXline(cells[i], addpt2(cells[i], mulpt2(sv[i], shiplen(i))),
+					cells[j], addpt2(cells[j], mulpt2(sv[j], shiplen(j)))))
+				goto Retry;
+	}
+	fprint(2, "\n");
+
+	n = 0;
+	for(i = 0; i < nelem(cells); i++){
+		assert(sizeof buf - n > 1+3+1);
+		if(i != 0)
+			buf[n++] = ',';
+		n += cell2coords(buf+n, sizeof buf - n, cells[i]);
+		buf[n++] = o[i] == OH? 'h': 'v';
+	}
+	buf[n] = 0;
+
+	m->body = smprint("layout %s", buf);
 	sendp(a->ego->battle->data, m);
 }
 

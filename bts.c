@@ -728,6 +728,8 @@ rmb(Mousectl *mc)
 			n += cell2coords(buf+n, sizeof buf - n, armada[i].p);
 			buf[n++] = armada[i].orient == OH? 'h': 'v';
 		}
+		buf[n] = 0;
+
 		chanprint(egress, "layout %s\n", buf);
 		layoutdone++;
 		break;
