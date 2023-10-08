@@ -39,6 +39,31 @@ getaname(void)
 	return nametab[getrand(nelem(nametab))];
 }
 
+/* TODO replace by abort once it becomes noret-ready */
+static _Noreturn void
+myabort(void)
+{
+	abort();
+}
+
+static Point2
+getnextfreecell(Map *m)
+{
+	Point2 p;
+	int i, j;
+
+	for(i = 0; i < MAPW; i++)
+		for(j = 0; j < MAPH; j++)
+			if(gettile(m, p = Pt2(i,j,1)) == Twater)
+				return p;
+	/*
+	 * XXX getting here would mean that we shot every single cell and
+	 * the game's still going, so something went wrong.
+	 */
+	myabort();
+//	return Pt2(0,0,0);
+}
+
 static void
 turnaround(Andy *a)
 {
@@ -91,13 +116,11 @@ Retry:
 		cells[i] = Pt2(getrand(MAPW-shiplen(i)), getrand(MAPH-shiplen(i)), 1);
 		o[i] = getrand(1<<20)&1? OH: OV;
 		sv[i] = o[i] == OH? Vec2(1,0): Vec2(0,1);
-		fprint(2, "%d%c ", i, o[i] == OH? 'h': 'v');
 		for(j = 0; j < i; j++)
 			if(lineXline(cells[i], addpt2(cells[i], mulpt2(sv[i], shiplen(i))),
 					cells[j], addpt2(cells[j], mulpt2(sv[j], shiplen(j)))))
 				goto Retry;
 	}
-	fprint(2, "\n");
 
 	n = 0;
 	for(i = 0; i < nelem(cells); i++){
@@ -118,12 +141,16 @@ andy_shoot(Andy *a, Msg *m)
 {
 	Point2 cell;
 	char buf[3+1];
+	int tries;
+
+	tries = 0;
 
 Retry:
 	switch(a->state){
 	case ASearching:
 		do
-			cell = Pt2(getrand(MAPW), getrand(MAPH), 1);
+			cell = ++tries > 100?
+				getnextfreecell(a): Pt2(getrand(MAPW), getrand(MAPH), 1);
 		while(gettile(a, cell) != Twater);
 		break;
 	case ACalibrating:
@@ -192,6 +219,7 @@ newandy(Player *p)
 	Andy *a;
 
 	a = emalloc(sizeof *a);
+	memset(a->map, Twater, MAPW*MAPH);
 	a->ego = p;
 	snprint(p->name, sizeof p->name, "%s", getaname());
 	a->state = ASearching;
