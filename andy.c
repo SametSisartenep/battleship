@@ -39,13 +39,6 @@ getaname(void)
 	return nametab[getrand(nelem(nametab))];
 }
 
-/* TODO replace by abort once it becomes noret-ready */
-static _Noreturn void
-myabort(void)
-{
-	abort();
-}
-
 static Point2
 getnextfreecell(Map *m)
 {
@@ -60,8 +53,8 @@ getnextfreecell(Map *m)
 	 * XXX getting here would mean that we shot every single cell and
 	 * the game's still going, so something went wrong.
 	 */
-	myabort();
-//	return Pt2(0,0,0);
+	abort();
+	return Pt2(0,0,0);
 }
 
 static void
@@ -114,7 +107,7 @@ andy_layout(Andy *a, Msg *m)
 	for(i = 0; i < NSHIPS; i++){
 Retry:
 		cells[i] = Pt2(getrand(MAPW-shiplen(i)), getrand(MAPH-shiplen(i)), 1);
-		o[i] = getrand(1<<20)&1? OH: OV;
+		o[i] = getrand(1)? OH: OV;
 		sv[i] = o[i] == OH? Vec2(1,0): Vec2(0,1);
 		for(j = 0; j < i; j++)
 			if(lineXline(cells[i], addpt2(cells[i], mulpt2(sv[i], shiplen(i))),
