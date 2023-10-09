@@ -68,33 +68,20 @@ turnaround(Andy *a)
 }
 
 static int
-between(double n, double min, double max)
-{
-	return n >= min && n < max;
-}
-
-static int
 lineXline(Point2 min0, Point2 max0, Point2 min1, Point2 max1)
 {
-	double a₁, b₁;
-	double a₂, b₂;
-	double det;
+	if(min0.x == max0.x)
+		max0.x++;
+	else if(min0.y == max0.y)
+		max0.y++;
 
-	a₁ = max0.y - min0.y;
-	b₁ = min0.x - max0.x;
+	if(min1.x == max1.x)
+		max1.x++;
+	else if(min1.y == max1.y)
+		max1.y++;
 
-	a₂ = max1.y - min1.y;
-	b₂ = min1.x - max1.x;
-
-	det = a₁*b₂ - a₂*b₁;
-	if(det == 0){
-		/* do they overlap? */
-		if((min0.x == min1.x && (between(min0.y, min1.y, max1.y) || between(max0.y, min1.y, max1.y))) ||
-			(min0.y == min1.y && (between(min0.x, min1.x, max1.x) || between(max0.x, min1.x, max1.x))))
-			return 1;
-		return 0;
-	}
-	return 1;
+	return min0.x < max1.x && min1.x < max0.x &&
+	       min0.y < max1.y && min1.y < max0.y;
 }
 
 static void
@@ -107,7 +94,7 @@ andy_layout(Andy *a, Msg *m)
 	for(i = 0; i < NSHIPS; i++){
 Retry:
 		cells[i] = Pt2(getrand(MAPW-shiplen(i)), getrand(MAPH-shiplen(i)), 1);
-		o[i] = getrand(1)? OH: OV;
+		o[i] = i > 1 && o[i-1] != OH? OH: OV;
 		sv[i] = o[i] == OH? Vec2(1,0): Vec2(0,1);
 		for(j = 0; j < i; j++)
 			if(lineXline(cells[i], addpt2(cells[i], mulpt2(sv[i], shiplen(i))),

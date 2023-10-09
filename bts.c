@@ -641,7 +641,6 @@ lmb(Mousectl *mc)
 
 		audio_play(playlist[SCANNON]);
 		cell = toboard(&alienboard, mc->xy);
-		/* TODO check if we already shot at that cell */
 		cell2coords(buf, sizeof buf, cell);
 		if(gettile(&alienboard, cell) == Twater){
 			chanprint(egress, "shoot %s\n", buf);
@@ -986,7 +985,7 @@ void
 soundproc(void *)
 {
 	Biobuf *aout;
-	uchar adata[512];
+	uchar buf[1024];
 
 	threadsetname("soundproc");
 
@@ -995,8 +994,8 @@ soundproc(void *)
 		sysfatal("Bopen: %r");
 
 	for(;;){
-		audio_process((void*)adata, sizeof(adata)/2);
-		Bwrite(aout, adata, sizeof adata);
+		audio_process((void*)buf, sizeof(buf)/2);
+		Bwrite(aout, buf, sizeof buf);
 	}
 }
 
