@@ -244,9 +244,9 @@ resetgame(void)
 	game.state = Waiting0;
 	conclusion.s = nil;
 	csetcursor(mctl, nil);
-	audio_stop(conclusion.snd);
+	stopaudio(conclusion.snd);
 	conclusion.snd = nil;
-	audio_play(playlist[SBG0]);
+	playaudio(playlist[SBG0]);
 }
 
 Point
@@ -547,7 +547,7 @@ initarmada(void)
 }
 
 void
-initsound(void)
+initsfx(void)
 {
 	struct {
 		char *path;
@@ -564,18 +564,18 @@ initsound(void)
 	};
 	int i;
 
-	audio_init(44100);
+	initaudio(44100);
 	audio_set_master_gain(0.5);
 
 	for(i = 0; i < NSOUNDS; i++){
-		playlist[i] = audio_new_source_from_file(sndtab[i].path);
+		playlist[i] = loadaudiosource(sndtab[i].path);
 		if(playlist[i] == nil)
-			sysfatal("audio_new_source_from_file: %r");
+			sysfatal("loadaudiosource: %r");
 		audio_set_gain(playlist[i], sndtab[i].gain);
 		audio_set_loop(playlist[i], sndtab[i].loops);
 	}
 
-	audio_play(playlist[SBG0]);
+	playaudio(playlist[SBG0]);
 }
 
 int
@@ -639,7 +639,7 @@ lmb(Mousectl *mc)
 		if(!ptinrect(mc->xy, alienboard.bbox))
 			break;
 
-		audio_play(playlist[SCANNON]);
+		playaudio(playlist[SCANNON]);
 		cell = toboard(&alienboard, mc->xy);
 		cell2coords(buf, sizeof buf, cell);
 		if(gettile(&alienboard, cell) == Twater){
@@ -823,8 +823,8 @@ celebrate(void)
 	conclusion.s = s;
 	conclusion.snd = playlist[SVICTORY];
 
-	audio_stop(playlist[SBG2]);
-	audio_play(conclusion.snd);
+	stopaudio(playlist[SBG2]);
+	playaudio(conclusion.snd);
 }
 
 void
@@ -836,8 +836,8 @@ keelhaul(void)
 	conclusion.s = s;
 	conclusion.snd = playlist[SDEFEAT];
 
-	audio_stop(playlist[SBG2]);
-	audio_play(conclusion.snd);
+	stopaudio(playlist[SBG2]);
+	playaudio(conclusion.snd);
 }
 
 void
@@ -853,8 +853,8 @@ announcewinner(char *winner)
 	conclusion.s = s;
 	conclusion.snd = playlist[SVICTORY];
 
-	audio_stop(playlist[SBG2]);
-	audio_play(conclusion.snd);
+	stopaudio(playlist[SBG2]);
+	playaudio(conclusion.snd);
 }
 
 void
@@ -904,16 +904,16 @@ processcmd(char *cmd)
 			match.bl[0] = &localboard;
 			match.bl[1] = &alienboard;
 			game.state = Watching;
-			audio_stop(playlist[SBG0]);
-			audio_play(playlist[SBG2]);
+			stopaudio(playlist[SBG0]);
+			playaudio(playlist[SBG2]);
 		}
 		break;
 	case Ready:
 		if(ct->index == CMlayout){
 			game.state = Outlaying;
 			curship = &armada[0];
-			audio_stop(playlist[SBG0]);
-			audio_play(playlist[SBG2]);
+			stopaudio(playlist[SBG0]);
+			playaudio(playlist[SBG2]);
 		}else if(ct->index == CMoid)
 			snprint(oid, sizeof oid, "%s", cb->f[1]);
 		break;
@@ -955,7 +955,7 @@ processcmd(char *cmd)
 		}else if(ct->index == CMwehit)
 			settile(&alienboard, lastshot, Thit);
 		else if(ct->index == CMwemiss){
-			audio_play(playlist[SWATER]);
+			playaudio(playlist[SWATER]);
 			settile(&alienboard, lastshot, Tmiss);
 		}
 		break;
@@ -994,7 +994,7 @@ soundproc(void *)
 		sysfatal("Bopen: %r");
 
 	for(;;){
-		audio_process((void*)buf, sizeof(buf)/2);
+		processaudio((void*)buf, sizeof(buf)/2);
 		Bwrite(aout, buf, sizeof buf);
 	}
 }
@@ -1108,7 +1108,7 @@ threadmain(int argc, char *argv[])
 	matches = newmenulist(14*font->height, "ongoing matches");
 	game.state = Waiting0;
 
-	initsound();
+	initsfx();
 	proccreate(soundproc, nil, mainstacksize);
 
 	addr = netmkaddr(argv[0], "tcp", "3047");

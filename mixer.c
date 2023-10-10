@@ -9,9 +9,6 @@
 static Mixer mixer;
 
 
-static int wav_init(AudioSourceInfo*, int);
-static int mp3_init(AudioSourceInfo*, int);
-
 static int
 min(int a, int b)
 {
@@ -72,8 +69,138 @@ fixedlerp(int a, int b, int t)
 //
 //}
 
+static void
+pcm_handler(AudioEvent *e)
+{
+	Pcm *pcm;
+	s16int *dst;
+	int len, i, n;
+
+	pcm = e->udata;
+
+	switch(e->type){
+	case AUDIO_EVENT_DESTROY:
+		free(pcm->data);
+		free(pcm);
+		break;
+	case AUDIO_EVENT_SAMPLES:
+		dst = e->buffer;
+		len = e->length/2;
+Fillbuf:
+		n = min(len, pcm->len - pcm->off);
+		len -= n;
+		while(n--){
+			i = 2*pcm->off;
+			dst[0] = ((s16int*)pcm->data)[i];
+			dst[1] = ((s16int*)pcm->data)[i+1];
+			dst += 2;
+			pcm->off++;
+		}
+		if(len > 0){
+			pcm->off = 0;
+			goto Fillbuf;
+		}
+		break;
+	case AUDIO_EVENT_REWIND:
+		pcm->off = 0;
+		break;
+	}
+}
+
+/* TODO generalize the *decproc procedures */
+static void
+wavdecproc(void *arg)
+{
+	int *pfd, fd;
+
+	pfd = arg;
+	fd = pfd[2];
+
+	close(pfd[0]);
+	dup(fd, 0);
+	close(fd);
+	dup(pfd[1], 1);
+	close(pfd[1]);
+
+	execl("/bin/audio/wavdec", "wavdec", nil);
+	threadexitsall("execl: %r");
+}
+
+static void
+mp3decproc(void *arg)
+{
+	int *pfd, fd;
+
+	pfd = arg;
+	fd = pfd[2];
+
+	close(pfd[0]);
+	dup(fd, 0);
+	close(fd);
+	dup(pfd[1], 1);
+	close(pfd[1]);
+
+	execl("/bin/audio/mp3dec", "mp3dec", nil);
+	threadexitsall("execl: %r");
+}
+
+static int
+loadaudio(AudioSourceInfo *info, int fd, void (*decfn)(void*))
+{
+	Pcm *pcm;
+	void *data;
+	uchar buf[1024];
+	int pfd[3], n, len;
+
+	data = nil;
+	len = 0;
+
+	if(pipe(pfd) < 0){
+		werrstr("pipe: %r");
+		return -1;
+	}
+	pfd[2] = fd;
+
+	procrfork(decfn, pfd, mainstacksize, RFFDG|RFNAMEG|RFNOTEG);
+	close(pfd[1]);
+	while((n = read(pfd[0], buf, sizeof buf)) > 0){
+		data = realloc(data, len+n);
+		if(data == nil){
+			werrstr("realloc: %r");
+			return -1;
+		}
+		memmove((uchar*)data+len, buf, n);
+		len += n;
+	}
+	close(pfd[0]);
+
+	pcm = malloc(sizeof *pcm);
+	if(pcm == nil){
+		free(data);
+		werrstr("malloc: %r");
+		return -1;
+	}
+	pcm->depth = 16;
+	pcm->chans = 2;
+	pcm->rate = 44100;
+	pcm->data = data;
+	pcm->len = len/(pcm->depth/8)/pcm->chans;
+
+	info->udata = pcm;
+	info->handler = pcm_handler;
+	info->samplerate = pcm->rate;
+	info->length = pcm->len;
+
+//	fprint(2, "pcm 0x%p:\ndata 0x%p\nlen %d\ndepth %d\nchans %d\nrate %d\n",
+//		pcm, pcm->data, pcm->len, pcm->depth, pcm->chans, pcm->rate);
+//	fprint(2, "info 0x%p:\nudata 0x%p\nhandler 0x%p\nsamplerate %d\nlength %d\n",
+//		info, info->udata, info->handler, info->samplerate, info->length);
+
+	return 0;
+}
+
 void
-audio_init(int samplerate)
+initaudio(int samplerate)
 {
 	mixer.samplerate = samplerate;
 	mixer.sources = nil;
@@ -191,14 +318,14 @@ process_source(AudioSource *src, int len)
 }
 
 void
-audio_process(s16int *dst, int len)
+processaudio(s16int *dst, int len)
 {
 	int i, x;
 	AudioSource **s;
 
 	/* Process in chunks of MIXBUFSIZE if `len` is larger than MIXBUFSIZE */
 	while(len > MIXBUFSIZE){
-		audio_process(dst, MIXBUFSIZE);
+		processaudio(dst, MIXBUFSIZE);
 		dst += MIXBUFSIZE;
 		len -= MIXBUFSIZE;
 	}
@@ -226,7 +353,7 @@ audio_process(s16int *dst, int len)
 }
 
 AudioSource *
-audio_new_source(AudioSourceInfo *info)
+newaudiosource(AudioSourceInfo *info)
 {
 	AudioSource *src;
 
@@ -245,12 +372,12 @@ audio_new_source(AudioSourceInfo *info)
 	audio_set_pan(src, 0);
 	audio_set_pitch(src, 1);
 	audio_set_loop(src, 0);
-	audio_stop(src);
+	stopaudio(src);
 	return src;
 }
 
 AudioSource *
-audio_new_source_from_file(char *path)
+loadaudiosource(char *path)
 {
 	AudioSourceInfo info;
 	uchar buf[12];
@@ -264,12 +391,12 @@ audio_new_source_from_file(char *path)
 	readn(fd, buf, sizeof buf);
 	seek(fd, 0, 0);
 	if(memcmp(buf, "ID3", 3) == 0 || (buf[0] == 0xFF && buf[1] == 0xFB)){
-		if(mp3_init(&info, fd) < 0){
+		if(loadaudio(&info, fd, mp3decproc) < 0){
 			close(fd);
 			return nil;
 		}
 	}else if(memcmp(buf+8, "WAVE", 4) == 0){
-		if(wav_init(&info, fd) < 0){
+		if(loadaudio(&info, fd, wavdecproc) < 0){
 			close(fd);
 			return nil;
 		}
@@ -280,11 +407,11 @@ audio_new_source_from_file(char *path)
 	}
 	close(fd);
 
-	return audio_new_source(&info);
+	return newaudiosource(&info);
 }
 
 void
-audio_destroy_source(AudioSource *src)
+delaudiosource(AudioSource *src)
 {
 	AudioSource **s;
 	AudioEvent e;
@@ -368,7 +495,7 @@ audio_set_loop(AudioSource *src, int loop)
 }
 
 void
-audio_play(AudioSource *src)
+playaudio(AudioSource *src)
 {
 	src->state = AUDIO_STATE_PLAYING;
 	if(!src->active){
@@ -379,199 +506,14 @@ audio_play(AudioSource *src)
 }
 
 void
-audio_pause(AudioSource *src)
+pauseaudio(AudioSource *src)
 {
 	src->state = AUDIO_STATE_PAUSED;
 }
 
 void
-audio_stop(AudioSource *src)
+stopaudio(AudioSource *src)
 {
 	src->state = AUDIO_STATE_STOPPED;
 	src->rewind = 1;
-}
-
-static void
-pcm_handler(AudioEvent *e)
-{
-	Pcm *pcm;
-	s16int *dst;
-	int len, i, n;
-
-	pcm = e->udata;
-
-	switch(e->type){
-	case AUDIO_EVENT_DESTROY:
-		free(pcm->data);
-		free(pcm);
-		break;
-	case AUDIO_EVENT_SAMPLES:
-		dst = e->buffer;
-		len = e->length/2;
-Fillbuf:
-		n = min(len, pcm->len - pcm->off);
-		len -= n;
-		while(n--){
-			i = 2*pcm->off;
-			dst[0] = ((s16int*)pcm->data)[i];
-			dst[1] = ((s16int*)pcm->data)[i+1];
-			dst += 2;
-			pcm->off++;
-		}
-		if(len > 0){
-			pcm->off = 0;
-			goto Fillbuf;
-		}
-		break;
-	case AUDIO_EVENT_REWIND:
-		pcm->off = 0;
-		break;
-	}
-}
-
-static void
-mp3decproc(void *arg)
-{
-	int *pfd, fd;
-
-	pfd = arg;
-	fd = pfd[2];
-
-	close(pfd[0]);
-	dup(fd, 0);
-	close(fd);
-	dup(pfd[1], 1);
-	close(pfd[1]);
-
-	execl("/bin/audio/mp3dec", "mp3dec", nil);
-	threadexitsall("execl: %r");
-}
-
-static int
-mp3_init(AudioSourceInfo *info, int fd)
-{
-	Pcm *pcm;
-	void *data;
-	uchar buf[1024];
-	int pfd[3], n, len;
-
-	data = nil;
-	len = 0;
-
-	if(pipe(pfd) < 0){
-		werrstr("pipe: %r");
-		return -1;
-	}
-	pfd[2] = fd;
-
-	procrfork(mp3decproc, pfd, mainstacksize, RFFDG|RFNAMEG|RFNOTEG);
-	close(pfd[1]);
-	while((n = read(pfd[0], buf, sizeof buf)) > 0){
-		data = realloc(data, len+n);
-		if(data == nil){
-			werrstr("realloc: %r");
-			return -1;
-		}
-		memmove((uchar*)data+len, buf, n);
-		len += n;
-	}
-	close(pfd[0]);
-
-	pcm = malloc(sizeof *pcm);
-	if(pcm == nil){
-		free(data);
-		werrstr("malloc: %r");
-		return -1;
-	}
-	pcm->depth = 16;
-	pcm->chans = 2;
-	pcm->rate = 44100;
-	pcm->data = data;
-	pcm->len = len/(pcm->depth/8)/pcm->chans;
-
-	info->udata = pcm;
-	info->handler = pcm_handler;
-	info->samplerate = pcm->rate;
-	info->length = pcm->len;
-
-//	fprint(2, "pcm 0x%p:\ndata 0x%p\nlen %d\ndepth %d\nchans %d\nrate %d\n",
-//		pcm, pcm->data, pcm->len, pcm->depth, pcm->chans, pcm->rate);
-//	fprint(2, "info 0x%p:\nudata 0x%p\nhandler 0x%p\nsamplerate %d\nlength %d\n",
-//		info, info->udata, info->handler, info->samplerate, info->length);
-
-	return 0;
-}
-
-/* TODO generalize the *decproc and *_init procedures */
-static void
-wavdecproc(void *arg)
-{
-	int *pfd, fd;
-
-	pfd = arg;
-	fd = pfd[2];
-
-	close(pfd[0]);
-	dup(fd, 0);
-	close(fd);
-	dup(pfd[1], 1);
-	close(pfd[1]);
-
-	execl("/bin/audio/wavdec", "wavdec", nil);
-	threadexitsall("execl: %r");
-}
-
-static int
-wav_init(AudioSourceInfo *info, int fd)
-{
-	Pcm *pcm;
-	void *data;
-	uchar buf[1024];
-	int pfd[3], n, len;
-
-	data = nil;
-	len = 0;
-
-	if(pipe(pfd) < 0){
-		werrstr("pipe: %r");
-		return -1;
-	}
-	pfd[2] = fd;
-
-	procrfork(wavdecproc, pfd, mainstacksize, RFFDG|RFNAMEG|RFNOTEG);
-	close(pfd[1]);
-	while((n = read(pfd[0], buf, sizeof buf)) > 0){
-		data = realloc(data, len+n);
-		if(data == nil){
-			werrstr("realloc: %r");
-			return -1;
-		}
-		memmove((uchar*)data+len, buf, n);
-		len += n;
-	}
-	close(pfd[0]);
-
-	pcm = malloc(sizeof *pcm);
-	if(pcm == nil){
-		free(data);
-		werrstr("malloc: %r");
-		return -1;
-	}
-	pcm->depth = 16;
-	pcm->chans = 2;
-	pcm->rate = 44100;
-	pcm->data = data;
-	pcm->len = len/(pcm->depth/8)/pcm->chans;
-
-	info->udata = pcm;
-	info->handler = pcm_handler;
-	info->samplerate = pcm->rate;
-	info->length = pcm->len;
-
-//	fprint(2, "pcm 0x%p:\ndata 0x%p\nlen %d\ndepth %d\nchans %d\nrate %d\n",
-//		pcm, pcm->data, pcm->len, pcm->depth, pcm->chans, pcm->rate);
-//	fprint(2, "info 0x%p:\nudata 0x%p\nhandler 0x%p\nsamplerate %d\nlength %d\n",
-//		info, info->udata, info->handler, info->samplerate, info->length);
-
-	return 0;
 }

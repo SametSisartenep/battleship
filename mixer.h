@@ -83,13 +83,13 @@ struct Mixer
 };
 
 
-void audio_init(int);
+void initaudio(int);
 void audio_set_master_gain(double);
-void audio_process(s16int*, int);
+void processaudio(s16int*, int);
 
-AudioSource *audio_new_source(AudioSourceInfo*);
-AudioSource *audio_new_source_from_file(char*);
-void audio_destroy_source(AudioSource*);
+AudioSource *newaudiosource(AudioSourceInfo*);
+AudioSource *loadaudiosource(char*);
+void delaudiosource(AudioSource*);
 double audio_get_length(AudioSource*);
 double audio_get_position(AudioSource*);
 int audio_get_state(AudioSource*);
@@ -97,6 +97,6 @@ void audio_set_gain(AudioSource*, double);
 void audio_set_pan(AudioSource*, double);
 void audio_set_pitch(AudioSource*, double);
 void audio_set_loop(AudioSource*, int);
-void audio_play(AudioSource*);
-void audio_pause(AudioSource*);
-void audio_stop(AudioSource*);
+void playaudio(AudioSource*);
+void pauseaudio(AudioSource*);
+void stopaudio(AudioSource*);
