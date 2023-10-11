@@ -74,6 +74,7 @@ Cmdtab svcmd[] = {
 };
 
 int debug;
+int silent;
 
 Cursor patrolcursor = {
 	{0, 0},
@@ -244,9 +245,11 @@ resetgame(void)
 	game.state = Waiting0;
 	conclusion.s = nil;
 	csetcursor(mctl, nil);
-	stopaudio(conclusion.snd);
-	conclusion.snd = nil;
-	playaudio(playlist[SBG0]);
+	if(!silent){
+		stopaudio(conclusion.snd);
+		conclusion.snd = nil;
+		playaudio(playlist[SBG0]);
+	}
 }
 
 Point
@@ -639,7 +642,8 @@ lmb(Mousectl *mc)
 		if(!ptinrect(mc->xy, alienboard.bbox))
 			break;
 
-		playaudio(playlist[SCANNON]);
+		if(!silent)
+			playaudio(playlist[SCANNON]);
 		cell = toboard(&alienboard, mc->xy);
 		cell2coords(buf, sizeof buf, cell);
 		if(gettile(&alienboard, cell) == Twater){
@@ -821,10 +825,11 @@ celebrate(void)
 
 	conclusion.c = pal[PCGreen];
 	conclusion.s = s;
-	conclusion.snd = playlist[SVICTORY];
-
-	stopaudio(playlist[SBG2]);
-	playaudio(conclusion.snd);
+	if(!silent){
+		conclusion.snd = playlist[SVICTORY];
+		stopaudio(playlist[SBG2]);
+		playaudio(conclusion.snd);
+	}
 }
 
 void
@@ -834,10 +839,11 @@ keelhaul(void)
 
 	conclusion.c = pal[PCRed];
 	conclusion.s = s;
-	conclusion.snd = playlist[SDEFEAT];
-
-	stopaudio(playlist[SBG2]);
-	playaudio(conclusion.snd);
+	if(!silent){
+		conclusion.snd = playlist[SDEFEAT];
+		stopaudio(playlist[SBG2]);
+		playaudio(conclusion.snd);
+	}
 }
 
 void
@@ -851,10 +857,11 @@ announcewinner(char *winner)
 	snprint(s, sizeof s, "%s WON", winner);
 	conclusion.c = pal[PCGreen];
 	conclusion.s = s;
-	conclusion.snd = playlist[SVICTORY];
-
-	stopaudio(playlist[SBG2]);
-	playaudio(conclusion.snd);
+	if(!silent){
+		conclusion.snd = playlist[SVICTORY];
+		stopaudio(playlist[SBG2]);
+		playaudio(conclusion.snd);
+	}
 }
 
 void
@@ -904,16 +911,20 @@ processcmd(char *cmd)
 			match.bl[0] = &localboard;
 			match.bl[1] = &alienboard;
 			game.state = Watching;
-			stopaudio(playlist[SBG0]);
-			playaudio(playlist[SBG2]);
+			if(!silent){
+				stopaudio(playlist[SBG0]);
+				playaudio(playlist[SBG2]);
+			}
 		}
 		break;
 	case Ready:
 		if(ct->index == CMlayout){
 			game.state = Outlaying;
 			curship = &armada[0];
-			stopaudio(playlist[SBG0]);
-			playaudio(playlist[SBG2]);
+			if(!silent){
+				stopaudio(playlist[SBG0]);
+				playaudio(playlist[SBG2]);
+			}
 		}else if(ct->index == CMoid)
 			snprint(oid, sizeof oid, "%s", cb->f[1]);
 		break;
@@ -955,7 +966,8 @@ processcmd(char *cmd)
 		}else if(ct->index == CMwehit)
 			settile(&alienboard, lastshot, Thit);
 		else if(ct->index == CMwemiss){
-			playaudio(playlist[SWATER]);
+			if(!silent)
+				playaudio(playlist[SWATER]);
 			settile(&alienboard, lastshot, Tmiss);
 		}
 		break;
@@ -1047,7 +1059,7 @@ netsendthread(void *arg)
 void
 usage(void)
 {
-	fprint(2, "usage: %s [-da] addr\n", argv0);
+	fprint(2, "usage: %s [-dsa] addr\n", argv0);
 	threadexitsall("usage");
 }
 
@@ -1066,6 +1078,9 @@ threadmain(int argc, char *argv[])
 	case 'd':
 		debug++;
 		break;
+	case 's':
+		silent++;
+		break;
 	case 'a':
 		game.mode = GMPvAI;
 		break;
@@ -1075,7 +1090,7 @@ threadmain(int argc, char *argv[])
 		usage();
 
 	snprint(winspec, sizeof winspec, "-dx %d -dy %d", SCRW, SCRH);
-	if(newwindow(winspec) < 0)
+	if(debug && newwindow(winspec) < 0)
 		sysfatal("newwindow: %r");
 	if(initdraw(nil, deffont, "bts") < 0)
 		sysfatal("initdraw: %r");
@@ -1086,13 +1101,14 @@ threadmain(int argc, char *argv[])
 
 	display->locking = 1;
 	unlockdisplay(display);
+	resize();
 
 	mctl = mc;
 	if((user = getenv("user")) == nil)
 		user = getuser();
 	snprint(uid, sizeof uid, "%s", user);
 
-	screenb = eallocimage(display, rectsubpt(screen->r, screen->r.min), screen->chan, 0, DNofill);
+	screenb = eallocimage(display, Rect(0,0,SCRW,SCRH), screen->chan, 0, DNofill);
 	worldrf.p = Pt2(0,0,1);
 	worldrf.bx = Vec2(1,0);
 	worldrf.by = Vec2(0,1);
@@ -1108,8 +1124,10 @@ threadmain(int argc, char *argv[])
 	matches = newmenulist(14*font->height, "ongoing matches");
 	game.state = Waiting0;
 
-	initsfx();
-	proccreate(soundproc, nil, mainstacksize);
+	if(!silent){
+		initsfx();
+		proccreate(soundproc, nil, mainstacksize);
+	}
 
 	addr = netmkaddr(argv[0], "tcp", "3047");
 	if(debug)

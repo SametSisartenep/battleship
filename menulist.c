@@ -106,6 +106,7 @@ menulist_update(Menulist *ml, Mousectl *mc, Channel *drawchan)
 	return selected;
 }
 
+/* TODO draw the menu in its own Window */
 static void
 menulist_draw(Menulist *ml, Image *dst)
 {
