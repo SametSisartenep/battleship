@@ -54,7 +54,6 @@ getnextfreecell(Map *m)
 	 * the game's still going, so something went wrong.
 	 */
 	abort();
-	return Pt2(0,0,0);
 }
 
 static void
