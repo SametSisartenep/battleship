@@ -731,7 +731,7 @@ c2proc(void *)
 		buf[n] = 0;
 
 		nf = tokenize(buf, f, nelem(f));
-		if((nf == 2 || nf == 3) && strcmp(f[0], "show") == 0){
+		if(strcmp(f[0], "show") == 0){
 			if(nf == 2 && strcmp(f[1], "matches") == 0)
 				fprintmatches(pfd[1]);
 			else if(nf == 3 && strcmp(f[1], "match") == 0){
