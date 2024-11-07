@@ -136,6 +136,7 @@ Font *titlefont;
 char winspec[32];
 char uid[8+1], oid[8+1];
 Channel *drawchan;
+Channel *reconnc;
 Channel *ingress, *egress;
 Mousectl *mctl; /* only used to update the cursor */
 RFrame worldrf;
@@ -162,6 +163,27 @@ struct {
 	AudioSource *snd; /* victory or defeat bg sfx */
 } conclusion;
 
+
+static void
+PvP_handler(Button *)
+{
+	if(game.state != Waiting0)
+		return;
+	chanprint(egress, "play %d\n", GMPvP);
+}
+
+static void
+PvAI_handler(Button *)
+{
+	if(game.state != Waiting0)
+		return;
+	chanprint(egress, "play %d\n", GMPvAI);
+}
+
+Button mainbtns[] = {
+	{ .label = "PvP", .handler = PvP_handler },
+	{ .label = "PvAI", .handler = PvAI_handler },
+};
 
 Point
 fromworld(Point2 p)
@@ -339,9 +361,13 @@ drawtitle(Image *dst)
 void
 drawgameoptions(Image *dst)
 {
-	static char s[] = "press p to play, w to watch";
+	Button *b;
 
-	string(dst, Pt(SCRW/2 - stringwidth(font, s)/2, 10*font->height+5), pal[PCWhite], ZP, font, s);
+	for(b = mainbtns; b < mainbtns+nelem(mainbtns); b++){
+		draw(dst, b->r, pal[b->status? PCBlack: PCWhite], nil, ZP);
+		border(dst, b->r, Btnborder, pal[PCBrown], ZP);
+		string(dst, addpt(b->r.min, Pt(Dx(b->r)/2 - stringwidth(font, b->label)/2, Btnpadding + Btnborder)), pal[b->status? PCWhite: PCBlack], ZP, font, b->label);
+	}
 }
 
 void
@@ -453,7 +479,6 @@ resize(void)
 		sysfatal("resize failed");
 	unlockdisplay(display);
 
-	/* ignore move events */
 	if(Dx(screen->r) != SCRW || Dy(screen->r) != SCRH){
 		fd = open("/dev/wctl", OWRITE);
 		if(fd >= 0){
@@ -517,6 +542,25 @@ inittiles(void)
 			ellipse(tiletab[i], Pt(TW/2,TH/2), 6, 6, 1, pal[PCWhite], ZP);
 			break;
 		}
+	}
+}
+
+void
+initmainbtns(void)
+{
+	Button *b;
+	Point btnsize;
+
+	btnsize.x = Btnborder + Btnpadding + 100 + Btnpadding + Btnborder;
+	btnsize.y = Btnborder + Btnpadding + font->height + Btnpadding + Btnborder;
+
+	for(b = mainbtns; b < mainbtns+nelem(mainbtns); b++){
+		b->status = BRest;
+		if(b == mainbtns)
+			b->r.min = Pt(SCRW/2 - Btnpadding - 100/2, 8*font->height);
+		else
+			b->r.min = addpt(b[-1].r.min, Pt(0, btnsize.y+4));
+		b->r.max = addpt(b->r.min, btnsize);
 	}
 }
 
@@ -588,7 +632,6 @@ initsfx(void)
 int
 confirmdone(Mousectl *mc)
 {
-	/* thanks sigrid! */
 	Cursor anchor = {
 		{0, 0},
 		{ 0x00, 0x00, 0x00, 0x1e, 0x01, 0x92, 0x30, 0xd2,
@@ -624,12 +667,21 @@ void
 lmb(Mousectl *mc)
 {
 	Point2 cell;
+	Button *b;
 	char buf[3+1];
 
 	if(conclusion.s != nil)
 		return;
 
 	switch(game.state){
+	case Waiting0:
+		for(b = mainbtns; b < mainbtns+nelem(mainbtns); b++){
+			if(ptinrect(mc->xy, b->r)){
+				b->handler(b);
+				break;
+			}
+		}
+		break;
 	case Outlaying:
 		if(!ptinrect(mc->xy, localboard.bbox))
 			break;
@@ -747,17 +799,23 @@ rmb(Mousectl *mc)
 void
 mouse(Mousectl *mc)
 {
-	Rectangle newbbox;
 	static Mouse oldm;
+	Rectangle newbbox;
+	Button *b;
 	int selmatch;
 
 	mc->xy = subpt(mc->xy, screen->r.min);
 
-	if(game.state == Waiting0)
+	if(game.state == Waiting0){
+		for(b = mainbtns; b < mainbtns+nelem(mainbtns); b++)
+			b->status = ptinrect(mc->xy, b->r)? BHover: BRest;
+		nbsend(drawchan, nil);
+
 		if((selmatch = matches->update(matches, mc, drawchan)) >= 0){
 			if(debug) fprint(2, "selected match id %d title %s\n", matches->entries[selmatch].id, matches->entries[selmatch].title);
 			chanprint(egress, "watch %d\n", matches->entries[selmatch].id);
 		}
+	}
 
 	if(game.state == Outlaying && curship != nil){
 		newbbox = mkshipbbox(toboard(&localboard, mc->xy), curship->orient, curship->ncells);
@@ -807,12 +865,11 @@ key(Rune r)
 
 	switch(r){
 	case Kdel:
-	case 'q':
 		threadexitsall(nil);
-	case 'p':
-		if(game.state != Waiting0)
-			break;
-		chanprint(egress, "play %d\n", game.mode);
+	case 'q':
+		if(game.state == Waiting0)
+			threadexitsall(nil);
+		nbsend(reconnc, nil);
 		break;
 	case 'w':
 		if(game.state != Waiting0)
@@ -1039,7 +1096,7 @@ netrecvthread(void *arg)
 			tot = 0;
 	}
 	closeioproc(io);
-	threadexitsall("connection lost");
+	threadexits(nil);
 }
 
 void
@@ -1057,13 +1114,13 @@ netsendthread(void *arg)
 			fprint(2, "sent '%s'\n", s);
 		free(s);
 	}
-	threadexitsall("connection lost");
+	threadexits(nil);
 }
 
 void
 usage(void)
 {
-	fprint(2, "usage: %s [-dsa] addr\n", argv0);
+	fprint(2, "usage: %s [-ds] addr\n", argv0);
 	threadexitsall("usage");
 }
 
@@ -1073,7 +1130,7 @@ threadmain(int argc, char *argv[])
 	char aux[64];
 	char *addr;
 	char *user;
-	int fd;
+	int fd, cfd;
 	Mousectl *mc;
 	Keyboardctl *kc;
 	Rune r;
@@ -1085,9 +1142,6 @@ threadmain(int argc, char *argv[])
 		break;
 	case 's':
 		silent++;
-		break;
-	case 'a':
-		game.mode = GMPvAI;
 		break;
 	default: usage();
 	}ARGEND
@@ -1125,6 +1179,7 @@ threadmain(int argc, char *argv[])
 
 	initpalette();
 	inittiles();
+	initmainbtns();
 	initboards();
 	initarmada();
 	matches = newmenulist(14*font->height, "ongoing matches");
@@ -1139,25 +1194,27 @@ threadmain(int argc, char *argv[])
 	if(debug)
 		fprint(2, "connecting to %s\n", addr);
 
-	fd = dial(addr, nil, nil, nil);
+	fd = dial(addr, nil, nil, &cfd);
 	if(fd < 0)
 		sysfatal("dial: %r");
 	else if(debug)
 		fprint(2, "line established\n");
 
 	drawchan = chancreate(sizeof(void*), 1);
+	reconnc = chancreate(sizeof(void*), 1);
 	ingress = chancreate(sizeof(char*), 1);
 	egress = chancreate(sizeof(char*), 1);
 	threadcreate(netrecvthread, &fd, mainstacksize);
 	threadcreate(netsendthread, &fd, mainstacksize);
 	nbsend(drawchan, nil);
 
-	enum { MOUSE, RESIZE, KEYS, DRAW, NONE };
+	enum { MOUSE, RESIZE, KEYS, DRAW, RECONN, NONE };
 	Alt a[] = {
 	 [MOUSE]	{mc->c, &mc->Mouse, CHANRCV},
 	 [RESIZE]	{mc->resizec, nil, CHANRCV},
 	 [KEYS]		{kc->c, &r, CHANRCV},
 	 [DRAW]		{drawchan, nil, CHANRCV},
+	 [RECONN]	{reconnc, nil, CHANRCV},
 	 [NONE]		{nil, nil, CHANEND}
 	};
 	for(;;)
@@ -1173,6 +1230,26 @@ threadmain(int argc, char *argv[])
 			break;
 		case DRAW:
 			redraw();
+			break;
+		case RECONN:
+			if(debug)
+				fprint(2, "reconnecting to %s\n", addr);
+
+			write(cfd, "close", 5);
+			close(cfd);
+			close(fd);
+
+			fd = dial(addr, nil, nil, &cfd);
+			if(fd < 0)
+				sysfatal("dial: %r");
+			else if(debug)
+				fprint(2, "line established\n");
+
+			threadcreate(netrecvthread, &fd, mainstacksize);
+			threadcreate(netsendthread, &fd, mainstacksize);
+
+			resetgame();
+			nbsend(drawchan, nil);
 			break;
 		default:
 			sysfatal("input thread interrupted");

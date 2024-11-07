@@ -32,7 +32,12 @@ enum {
 	ACalibrating,
 	ABombing,
 
+	BRest = 0,
+	BHover,
+
 	Boardmargin = 50,
+	Btnborder = 4,
+	Btnpadding = 2,
 	TW = 16,
 	TH = TW,
 	MAPW = 17,
@@ -161,6 +166,16 @@ struct MatchInfo
 	} pl[2];
 	Board *bl[2];
 	char conclusion[16];
+};
+
+typedef struct Button Button;
+
+struct Button
+{
+	char *label;
+	Rectangle r;
+	int status;
+	void (*handler)(Button*);
 };
 
 typedef struct Mentry Mentry;
