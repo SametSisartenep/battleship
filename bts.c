@@ -129,7 +129,9 @@ Cursor aimcursor = {
 	}
 };
 char deffont[] = "/lib/font/bit/pelm/unicode.9.font";
-char titlefontpath[] = "assets/font/gunmetal/gunmetal.48.font";
+char assetdir[] = "/sys/games/lib/battleship";
+//char assetdir[] = "assets";
+char titlefontpath[] = "font/gunmetal/gunmetal.48.font";
 Font *titlefont;
 char winspec[32];
 char uid[8+1], oid[8+1];
@@ -557,21 +559,23 @@ initsfx(void)
 		double gain;
 		int loops;
 	} sndtab[NSOUNDS] = {
-	 [SBG0]		{"assets/sfx/bg0.mp3", 1.0, 1},
-	 [SBG1]		{"assets/sfx/bg1.mp3", 1.0, 1},
-	 [SBG2]		{"assets/sfx/bg2.mp3", 1.0, 1},
-	 [SCANNON]	{"assets/sfx/cannon.mp3", 5.0, 0},
-	 [SWATER]	{"assets/sfx/water.mp3", 3.0, 0},
-	 [SVICTORY]	{"assets/sfx/victory.mp3", 1.0, 1},
-	 [SDEFEAT]	{"assets/sfx/defeat.mp3", 1.0, 1},
+	 [SBG0]		{"sfx/bg0.mp3", 1.0, 1},
+	 [SBG1]		{"sfx/bg1.mp3", 1.0, 1},
+	 [SBG2]		{"sfx/bg2.mp3", 1.0, 1},
+	 [SCANNON]	{"sfx/cannon.mp3", 5.0, 0},
+	 [SWATER]	{"sfx/water.mp3", 3.0, 0},
+	 [SVICTORY]	{"sfx/victory.mp3", 1.0, 1},
+	 [SDEFEAT]	{"sfx/defeat.mp3", 1.0, 1},
 	};
 	int i;
+	char aux[64];
 
 	initaudio(44100);
 	audio_set_master_gain(0.5);
 
 	for(i = 0; i < NSOUNDS; i++){
-		playlist[i] = loadaudiosource(sndtab[i].path);
+		snprint(aux, sizeof aux, "%s/%s", assetdir, sndtab[i].path);
+		playlist[i] = loadaudiosource(aux);
 		if(playlist[i] == nil)
 			sysfatal("loadaudiosource: %r");
 		audio_set_gain(playlist[i], sndtab[i].gain);
@@ -1066,6 +1070,7 @@ usage(void)
 void
 threadmain(int argc, char *argv[])
 {
+	char aux[64];
 	char *addr;
 	char *user;
 	int fd;
@@ -1113,7 +1118,8 @@ threadmain(int argc, char *argv[])
 	worldrf.bx = Vec2(1,0);
 	worldrf.by = Vec2(0,1);
 
-	titlefont = openfont(display, titlefontpath);
+	snprint(aux, sizeof aux, "%s/%s", assetdir, titlefontpath);
+	titlefont = openfont(display, aux);
 	if(titlefont == nil)
 		sysfatal("openfont: %r");
 
