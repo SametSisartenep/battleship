@@ -871,11 +871,6 @@ key(Rune r)
 			threadexitsall(nil);
 		nbsend(reconnc, nil);
 		break;
-	case 'w':
-		if(game.state != Waiting0)
-			break;
-		chanprint(egress, "watch\n");
-		break;
 	}
 }
 
@@ -1073,6 +1068,29 @@ soundproc(void *)
 }
 
 void
+timerproc(void *)
+{
+	uvlong t0, Δt, acc;
+
+	threadsetname("timer");
+
+	t0 = nsec();
+	acc = 0;
+	for(;;){
+		Δt = nsec() - t0;
+		acc += Δt;
+
+		if(game.state == Waiting0 && acc >= 5*SEC){
+			chanprint(egress, "watch\n");
+			acc = 0;
+		}
+
+		t0 += Δt;
+		sleep(HZ2MS(10));
+	}
+}
+
+void
 netrecvthread(void *arg)
 {
 	Ioproc *io;
@@ -1207,6 +1225,8 @@ threadmain(int argc, char *argv[])
 	threadcreate(netrecvthread, &fd, mainstacksize);
 	threadcreate(netsendthread, &fd, mainstacksize);
 	nbsend(drawchan, nil);
+
+	proccreate(timerproc, nil, mainstacksize);
 
 	enum { MOUSE, RESIZE, KEYS, DRAW, RECONN, NONE };
 	Alt a[] = {

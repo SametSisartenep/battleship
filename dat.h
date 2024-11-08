@@ -1,3 +1,5 @@
+#define SEC	1000000000ULL
+
 enum {
 	Twater,
 	Tship,
