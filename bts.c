@@ -388,10 +388,10 @@ drawinfo(Image *dst)
 	p = Pt(SCRW/2 - stringwidth(font, s)/2, 0);
 	string(dst, p, pal[PCWhite], ZP, font, s);
 
-	s = "TARGET";
+	s = gamestate == Watching? "PLAYER 1": "TARGET";
 	p = subpt(alienboard.bbox.min, Pt(font->width+2+Borderwidth,0));
 	vstring(dst, p, pal[PCWhite], ZP, font, s);
-	s = "LOCAL";
+	s = gamestate == Watching? "PLAYER 2": "LOCAL";
 	p = Pt(localboard.bbox.max.x+2+Borderwidth, localboard.bbox.min.y);
 	vstring(dst, p, pal[PCWhite], ZP, font, s);
 
