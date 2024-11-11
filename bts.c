@@ -154,20 +154,17 @@ Menulist *matches;
 MatchInfo match; /* of which we are an spectator */
 
 struct {
-	int state;
-	int mode;
-} game;
-struct {
 	Image *c; /* color */
 	char *s; /* banner text */
 	AudioSource *snd; /* victory or defeat bg sfx */
 } conclusion;
+int gamestate;
 
 
 static void
 PvP_handler(Button *)
 {
-	if(game.state != Waiting0)
+	if(gamestate != Waiting0)
 		return;
 	chanprint(egress, "play %d\n", GMPvP);
 }
@@ -175,7 +172,7 @@ PvP_handler(Button *)
 static void
 PvAI_handler(Button *)
 {
-	if(game.state != Waiting0)
+	if(gamestate != Waiting0)
 		return;
 	chanprint(egress, "play %d\n", GMPvAI);
 }
@@ -266,7 +263,7 @@ resetgame(void)
 	curship = nil;
 	layoutdone = 0;
 	oid[0] = 0;
-	game.state = Waiting0;
+	gamestate = Waiting0;
 	conclusion.s = nil;
 	csetcursor(mctl, nil);
 	if(!silent){
@@ -378,7 +375,7 @@ drawinfo(Image *dst)
 	int i;
 
 	s = "";
-	switch(game.state){
+	switch(gamestate){
 	case Watching:
 		snprint(aux, sizeof aux, "watching %s vs. %s", match.pl[0].uid, match.pl[1].uid);
 		s = aux;
@@ -399,12 +396,12 @@ drawinfo(Image *dst)
 	vstring(dst, p, pal[PCWhite], ZP, font, s);
 
 	p = Pt(alienboard.bbox.max.x+2+Borderwidth, alienboard.bbox.min.y);
-	vstring(dst, p, pal[PCWhite], ZP, font, game.state == Watching? match.pl[1].uid: oid);
+	vstring(dst, p, pal[PCWhite], ZP, font, gamestate == Watching? match.pl[1].uid: oid);
 	p = subpt(localboard.bbox.min, Pt(font->width+2+Borderwidth,0));
-	vstring(dst, p, pal[PCWhite], ZP, font, game.state == Watching? match.pl[0].uid: uid);
+	vstring(dst, p, pal[PCWhite], ZP, font, gamestate == Watching? match.pl[0].uid: uid);
 
 	/* TODO make this an info panel and show errors from bad transactions. */
-	if(game.state == Outlaying){
+	if(gamestate == Outlaying){
 		if(curship != nil){
 			snprint(aux, sizeof aux, "%s (%d)", shipname(curship-armada), curship->ncells);
 			p = Pt(SCRW/2 - stringwidth(font, aux)/2, SCRH-Boardmargin);
@@ -414,7 +411,7 @@ drawinfo(Image *dst)
 			p = Pt(SCRW/2 - stringwidth(font, s)/2, SCRH-Boardmargin);
 			string(dst, p, pal[PCYellow], ZP, font, s);
 		}
-	}else if(game.state == Watching){
+	}else if(gamestate == Watching){
 		snprint(aux, sizeof aux, "waiting for players to");
 		snprint(aux2, sizeof aux2, "lay out their fleet");
 		for(i = 0; i < nelem(match.pl); i++)
@@ -448,7 +445,7 @@ redraw(void)
 	lockdisplay(display);
 
 	draw(screenb, screenb->r, pal[PCBlack], nil, ZP);
-	switch(game.state){
+	switch(gamestate){
 	case Waiting0:
 		drawtitle(screenb);
 		drawgameoptions(screenb);
@@ -673,7 +670,7 @@ lmb(Mousectl *mc)
 	if(conclusion.s != nil)
 		return;
 
-	switch(game.state){
+	switch(gamestate){
 	case Waiting0:
 		for(b = mainbtns; b < mainbtns+nelem(mainbtns); b++){
 			if(ptinrect(mc->xy, b->r)){
@@ -713,7 +710,7 @@ lmb(Mousectl *mc)
 void
 mmb(Mousectl *mc)
 {
-	if(game.state != Outlaying)
+	if(gamestate != Outlaying)
 		return;
 
 	if(curship != nil){
@@ -763,7 +760,7 @@ rmb(Mousectl *mc)
 	char buf[NSHIPS*(1+3+1)+1];
 	int i, n;
 
-	if(game.state != Outlaying)
+	if(gamestate != Outlaying)
 		return;
 
 	mc->xy = addpt(mc->xy, screen->r.min);
@@ -806,7 +803,7 @@ mouse(Mousectl *mc)
 
 	mc->xy = subpt(mc->xy, screen->r.min);
 
-	if(game.state == Waiting0){
+	if(gamestate == Waiting0){
 		for(b = mainbtns; b < mainbtns+nelem(mainbtns); b++)
 			b->status = ptinrect(mc->xy, b->r)? BHover: BRest;
 		nbsend(drawchan, nil);
@@ -817,7 +814,7 @@ mouse(Mousectl *mc)
 		}
 	}
 
-	if(game.state == Outlaying && curship != nil){
+	if(gamestate == Outlaying && curship != nil){
 		newbbox = mkshipbbox(toboard(&localboard, mc->xy), curship->orient, curship->ncells);
 
 		if(ptinrect(mc->xy, localboard.bbox))
@@ -832,7 +829,7 @@ mouse(Mousectl *mc)
 		}
 	}
 
-	if(game.state == Playing && conclusion.s == nil)
+	if(gamestate == Playing && conclusion.s == nil)
 		if(ptinrect(mc->xy, alienboard.bbox))
 			csetcursor(mctl, &aimcursor);
 		else
@@ -867,7 +864,7 @@ key(Rune r)
 	case Kdel:
 		threadexitsall(nil);
 	case 'q':
-		if(game.state == Waiting0)
+		if(gamestate == Waiting0)
 			threadexitsall(nil);
 		nbsend(reconnc, nil);
 		break;
@@ -944,12 +941,12 @@ processcmd(char *cmd)
 	else if(ct->index == CMlose)
 		keelhaul();
 
-	switch(game.state){
+	switch(gamestate){
 	case Waiting0:
 		if(ct->index == CMid)
 			chanprint(egress, "id %s\n", uid);
 		else if(ct->index == CMqueued){
-			game.state = Ready;
+			gamestate = Ready;
 			csetcursor(mctl, &patrolcursor);
 		}else if(ct->index == CMmatches && !matches->filling){
 			matches->clear(matches);
@@ -966,7 +963,7 @@ processcmd(char *cmd)
 			match.pl[1].state = Outlaying;
 			match.bl[0] = &localboard;
 			match.bl[1] = &alienboard;
-			game.state = Watching;
+			gamestate = Watching;
 			if(!silent){
 				stopaudio(playlist[SBG0]);
 				playaudio(playlist[SBG2]);
@@ -975,7 +972,7 @@ processcmd(char *cmd)
 		break;
 	case Ready:
 		if(ct->index == CMlayout){
-			game.state = Outlaying;
+			gamestate = Outlaying;
 			curship = &armada[0];
 			if(!silent){
 				stopaudio(playlist[SBG0]);
@@ -1010,14 +1007,14 @@ processcmd(char *cmd)
 		break;
 	case Outlaying:
 		if(ct->index == CMwait){
-			game.state = Waiting;
+			gamestate = Waiting;
 			csetcursor(mctl, &waitcursor);
 		}else if(ct->index == CMplay)
-			game.state = Playing;
+			gamestate = Playing;
 		break;
 	case Playing:
 		if(ct->index == CMwait){
-			game.state = Waiting;
+			gamestate = Waiting;
 			csetcursor(mctl, &waitcursor);
 		}else if(ct->index == CMwehit)
 			settile(&alienboard, lastshot, Thit);
@@ -1029,7 +1026,7 @@ processcmd(char *cmd)
 		break;
 	case Waiting:
 		if(ct->index == CMplay){
-			game.state = Playing;
+			gamestate = Playing;
 			csetcursor(mctl, nil);
 		}else if(ct->index == CMtheyhit){
 			cell = coords2cell(cb->f[1]);
@@ -1080,7 +1077,7 @@ timerproc(void *)
 		Δt = nsec() - t0;
 		acc += Δt;
 
-		if(game.state == Waiting0 && acc >= 5*SEC){
+		if(gamestate == Waiting0 && acc >= 5*SEC){
 			chanprint(egress, "watch\n");
 			acc = 0;
 		}
@@ -1201,7 +1198,7 @@ threadmain(int argc, char *argv[])
 	initboards();
 	initarmada();
 	matches = newmenulist(14*font->height, "ongoing matches");
-	game.state = Waiting0;
+	gamestate = Waiting0;
 
 	if(!silent){
 		initsfx();
