@@ -139,6 +139,7 @@ Channel *drawchan;
 Channel *reconnc;
 Channel *ingress, *egress;
 Mousectl *mctl; /* only used to update the cursor */
+Keyboardctl *kctl; /* only used to ignore key presses during specific interactions */
 RFrame worldrf;
 Image *pal[NCOLORS];
 Image *screenb;
@@ -277,6 +278,7 @@ Point
 vstring(Image *dst, Point p, Image *src, Point sp, Font *f, char *s)
 {
 	char buf[2];
+
 	buf[1] = 0;
 	while(*s){
 		buf[0] = *s++;
@@ -328,7 +330,7 @@ drawship(Image *dst, Ship *s)
 }
 
 void
-drawships(Image *dst)
+drawarmada(Image *dst)
 {
 	int i;
 
@@ -371,7 +373,7 @@ void
 drawinfo(Image *dst)
 {
 	Point p;
-	char *s, aux[32], aux2[32];
+	char *s, aux[32];
 	int i;
 
 	s = "";
@@ -400,7 +402,6 @@ drawinfo(Image *dst)
 	p = subpt(localboard.bbox.min, Pt(font->width+2+Borderwidth,0));
 	vstring(dst, p, pal[PCWhite], ZP, font, gamestate == Watching? match.pl[0].uid: uid);
 
-	/* TODO make this an info panel and show errors from bad transactions. */
 	if(gamestate == Outlaying){
 		if(curship != nil){
 			snprint(aux, sizeof aux, "%s (%d)", shipname(curship-armada), curship->ncells);
@@ -410,19 +411,25 @@ drawinfo(Image *dst)
 			s = "done with the layout?";
 			p = Pt(SCRW/2 - stringwidth(font, s)/2, SCRH-Boardmargin);
 			string(dst, p, pal[PCYellow], ZP, font, s);
+			s = "LMB/MMB = No, RMB = Yes";
+			p = Pt(SCRW/2 - stringwidth(font, s)/2, SCRH-Boardmargin+font->height);
+			string(dst, p, pal[PCYellow], ZP, font, s);
 		}
 	}else if(gamestate == Watching){
-		snprint(aux, sizeof aux, "waiting for players to");
-		snprint(aux2, sizeof aux2, "lay out their fleet");
 		for(i = 0; i < nelem(match.pl); i++)
 			if(match.pl[i].state == Playing){
 				snprint(aux, sizeof aux, "it's %s's turn", match.pl[i].uid);
-				aux2[0] = 0;
+				p = Pt(SCRW/2 - stringwidth(font, aux)/2, SCRH-Boardmargin);
+				string(dst, p, pal[PCBlue], ZP, font, aux);
+				return;
 			}
-		p = Pt(SCRW/2 - stringwidth(font, aux)/2, SCRH-Boardmargin);
-		string(dst, p, pal[PCBlue], ZP, font, aux);
-		p = Pt(SCRW/2 - stringwidth(font, aux2)/2, SCRH-Boardmargin+font->height);
-		string(dst, p, pal[PCBlue], ZP, font, aux2);
+
+		s = "waiting for players to";
+		p = Pt(SCRW/2 - stringwidth(font, s)/2, SCRH-Boardmargin);
+		string(dst, p, pal[PCBlue], ZP, font, s);
+		s = "lay out their fleet";
+		p = Pt(SCRW/2 - stringwidth(font, s)/2, SCRH-Boardmargin+font->height);
+		string(dst, p, pal[PCBlue], ZP, font, s);
 	}
 }
 
@@ -454,7 +461,7 @@ redraw(void)
 	default:
 		drawboard(screenb, &alienboard);
 		drawboard(screenb, &localboard);
-		drawships(screenb);
+		drawarmada(screenb);
 		drawinfo(screenb);
 		break;
 	}
@@ -642,22 +649,47 @@ confirmdone(Mousectl *mc)
 		  0x86, 0x64, 0x8f, 0xc4, 0x80, 0x0c, 0xff, 0xf8,
 		},
 	};
+
 	csetcursor(mc, &anchor);
+	readmouse(mc);
 	while(mc->buttons == 0)
 		readmouse(mc);
 	if(mc->buttons != 4){
+		while(nbrecv(kctl->c, nil))	/* flush key presses */
 		csetcursor(mc, nil);
 		return 0;
 	}
 	while(mc->buttons){
 		if(mc->buttons != 4){
+			while(nbrecv(kctl->c, nil));
 			csetcursor(mc, nil);
 			return 0;
 		}
 		readmouse(mc);
 	}
+	while(nbrecv(kctl->c, nil));
 	csetcursor(mc, nil);
 	return 1;
+}
+
+void
+sendlayout(void)
+{
+	char buf[NSHIPS*(1+3+1)+1];
+	int i, n;
+
+	n = 0;
+	for(i = 0; i < nelem(armada); i++){
+		assert(sizeof(buf) - n > 1+3+1);
+		if(i != 0)
+			buf[n++] = ',';
+		n += cell2coords(buf+n, sizeof(buf) - n, armada[i].p);
+		buf[n++] = armada[i].orient == OH? 'h': 'v';
+	}
+	buf[n] = 0;
+
+	chanprint(egress, "layout %s\n", buf);
+	layoutdone++;
 }
 
 void
@@ -672,21 +704,25 @@ lmb(Mousectl *mc)
 
 	switch(gamestate){
 	case Waiting0:
-		for(b = mainbtns; b < mainbtns+nelem(mainbtns); b++){
+		for(b = mainbtns; b < mainbtns+nelem(mainbtns); b++)
 			if(ptinrect(mc->xy, b->r)){
 				b->handler(b);
 				break;
 			}
-		}
 		break;
 	case Outlaying:
 		if(!ptinrect(mc->xy, localboard.bbox))
 			break;
 
 		if(curship != nil && rectinrect(curship->bbox, localboard.bbox)){
-			if(++curship-armada >= nelem(armada))
+			if(++curship >= armada+nelem(armada)){
 				curship = nil;
-			else if(curship != &armada[0])
+				redraw();
+				if(confirmdone(mc))
+					sendlayout();
+				else
+					curship = &armada[0];
+			}else if(curship != &armada[0])
 				curship->orient = (curship-1)->orient;
 			nbsend(drawchan, nil);
 		}
@@ -745,55 +781,6 @@ mmb(Mousectl *mc)
 }
 
 void
-rmb(Mousectl *mc)
-{
-	enum {
-		PLACESHIP,
-		DONE,
-	};
-	static char *items[] = {
-	 [PLACESHIP]	"relocate ships",
-	 [DONE]		"done",
-		nil
-	};
-	static Menu menu = { .item = items };
-	char buf[NSHIPS*(1+3+1)+1];
-	int i, n;
-
-	if(gamestate != Outlaying)
-		return;
-
-	mc->xy = addpt(mc->xy, screen->r.min);
-	switch(menuhit(3, mc, &menu, _screen)){
-	case PLACESHIP:
-		if(!layoutdone)
-			curship = &armada[0];
-		break;
-	case DONE:
-		if(curship != nil || layoutdone)
-			break;
-
-		if(!confirmdone(mc))
-			break;
-
-		n = 0;
-		for(i = 0; i < nelem(armada); i++){
-			assert(sizeof buf - n > 1+3+1);
-			if(i != 0)
-				buf[n++] = ',';
-			n += cell2coords(buf+n, sizeof buf - n, armada[i].p);
-			buf[n++] = armada[i].orient == OH? 'h': 'v';
-		}
-		buf[n] = 0;
-
-		chanprint(egress, "layout %s\n", buf);
-		layoutdone++;
-		break;
-	}
-	nbsend(drawchan, nil);
-}
-
-void
 mouse(Mousectl *mc)
 {
 	static Mouse oldm;
@@ -809,7 +796,9 @@ mouse(Mousectl *mc)
 		nbsend(drawchan, nil);
 
 		if((selmatch = matches->update(matches, mc, drawchan)) >= 0){
-			if(debug) fprint(2, "selected match id %d title %s\n", matches->entries[selmatch].id, matches->entries[selmatch].title);
+			if(debug) fprint(2, "selected match id %d title %s\n",
+					matches->entries[selmatch].id,
+					matches->entries[selmatch].title);
 			chanprint(egress, "watch %d\n", matches->entries[selmatch].id);
 		}
 	}
@@ -843,9 +832,6 @@ mouse(Mousectl *mc)
 		case 2:
 			mmb(mc);
 			break;
-		case 4:
-			rmb(mc);
-			break;
 		}
 
 	oldm = mc->Mouse;
@@ -863,6 +849,7 @@ key(Rune r)
 	switch(r){
 	case Kdel:
 		threadexitsall(nil);
+	case Kesc:
 	case 'q':
 		if(gamestate == Waiting0)
 			threadexitsall(nil);
@@ -1178,6 +1165,7 @@ threadmain(int argc, char *argv[])
 	resize();
 
 	mctl = mc;
+	kctl = kc;
 	if((user = getenv("user")) == nil)
 		user = getuser();
 	snprint(uid, sizeof uid, "%s", user);
