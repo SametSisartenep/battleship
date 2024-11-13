@@ -413,6 +413,113 @@ End:
 }
 
 void
+layout(char *args, Match *m, Stands *stands, uint pidx, uint opidx)
+{
+	Player *p, *op;
+	Point2 cell;
+	uchar buf[BY2MAP];
+	char *coords[5];
+	uint n0;
+	int i, orient;
+
+	p = m->pl[pidx];
+	op = m->pl[opidx];
+
+	if(gettokens(args, coords, nelem(coords), ",") == nelem(coords)){
+		if(debug)
+			fprint(2, "rcvd layout from %s\n", p->name);
+
+		for(i = 0; i < nelem(coords); i++){
+			cell = coords2cell(coords[i]);
+			orient = coords[i][strlen(coords[i])-1] == 'h'? OH: OV;
+			settiles(p, cell, orient, shiplen(i), Tship);
+		}
+
+		p->state = Waiting;
+		bitpackmap(buf, sizeof buf, p);
+		broadcast(stands, "outlayed %d %.*[\n", pidx, sizeof buf, buf);
+
+		if(op->state == Waiting){
+			if(debug){
+				fprint(2, "%s's map:\n", p->name);
+				fprintmap(2, p);
+				fprint(2, "%s's map:\n", op->name);
+				fprintmap(2, op);
+			}
+			n0 = truerand();
+			if(debug)
+				fprint(2, "let the game begin: %s plays, %s waits\n",
+						m->pl[n0&1]->name, m->pl[(n0+1)&1]->name);
+
+			chanprint(m->pl[n0&1]->io.out, "play\n");
+			m->pl[n0&1]->state = Playing;
+
+			chanprint(m->pl[(n0+1)&1]->io.out, "wait\n");
+
+			broadcast(stands, "plays %d\n", n0&1);
+		}
+	}
+}
+
+int
+shoot(char *args, Match *m, Stands *stands, uint pidx, uint opidx)
+{
+	Player *p, *op;
+	Point2 cell;
+	char cbuf[3+1];
+
+	p = m->pl[pidx];
+	op = m->pl[opidx];
+
+	cell = coords2cell(args);
+	switch(gettile(op, cell)){
+	case Tship:
+		settile(op, cell, Thit);
+		chanprint(p->io.out, "hit\n");
+
+		cell2coords(cbuf, sizeof cbuf, cell);
+		chanprint(op->io.out, "hit %s\n", cbuf);
+
+		broadcast(stands, "hit %d %s\n", pidx, cbuf);
+
+		if(countshipcells(op) < (debug? 12: 1)){
+			chanprint(p->io.out, "win\n");
+			chanprint(op->io.out, "lose\n");
+
+			p->state = Waiting0;
+			p->battle = nil;
+
+			op->state = Waiting0;
+			op->battle = nil;
+
+			broadcast(stands, "won %d\n", pidx);
+			return 1;
+		}
+		goto Swapturn;
+	case Twater:
+		settile(op, cell, Tmiss);
+		chanprint(p->io.out, "miss\n");
+
+		cell2coords(cbuf, sizeof cbuf, cell);
+		chanprint(op->io.out, "miss %s\n", cbuf);
+
+		broadcast(stands, "miss %d %s\n", pidx, cbuf);
+Swapturn:
+		chanprint(p->io.out, "wait\n");
+		chanprint(op->io.out, "play\n");
+
+		p->state = Waiting;
+		op->state = Playing;
+
+		broadcast(stands, "plays %d\n", opidx);
+		if(debug)
+			fprint(2, "%s plays, %s waits\n", op->name, p->name);
+		break;
+	}
+	return 0;
+}
+
+void
 battleproc(void *arg)
 {
 	Msg *msg;
@@ -422,15 +529,12 @@ battleproc(void *arg)
 	Player *p, *op;
 	Stands stands; /* TODO make this a member of Match */
 	uchar buf[BY2MAP];
-	char cbuf[3+1];
-	uint n0;
-
-	Point2 cell;
-	char *coords[5];
-	int i, orient;
+	uint pidx, opidx;
+	int i, matchisover;
 
 	m = arg;
 	memset(&stands, 0, sizeof stands);
+	matchisover = 0;
 
 	threadsetname("battleproc [%d] %s ↔ %s", m->id,
 		m->pl[0]->nci != nil? m->pl[0]->nci->raddr: "andy",
@@ -455,7 +559,8 @@ battleproc(void *arg)
 			if(debug) fprint(2, "[%d] battleproc rcvd '%s' from p(fd=%d) on data\n", getpid(), msg->body, msg->from->io.fd);
 
 			p = msg->from;
-			op = p == m->pl[0]? m->pl[1]: m->pl[0];
+			pidx = p == m->pl[0]? 0: 1;
+			opidx = pidx^1;
 
 			cb = parsecmd(msg->body, strlen(msg->body));
 			ct = lookupcmd(cb, clcmd, nelem(clcmd));
@@ -465,93 +570,39 @@ battleproc(void *arg)
 			switch(p->state){
 			case Outlaying:
 				if(ct->index == CMlayout)
-					if(gettokens(cb->f[1], coords, nelem(coords), ",") == nelem(coords)){
-						if(debug)
-							fprint(2, "rcvd layout from %s\n", p->name);
-						for(i = 0; i < nelem(coords); i++){
-							cell = coords2cell(coords[i]);
-							orient = coords[i][strlen(coords[i])-1] == 'h'? OH: OV;
-							settiles(p, cell, orient, shiplen(i), Tship);
-						}
-						p->state = Waiting;
-						bitpackmap(buf, sizeof buf, p);
-						broadcast(&stands, "outlayed %d %.*[\n", p == m->pl[0]? 0: 1, sizeof buf, buf);
-						if(op->state == Waiting){
-							if(debug){
-								fprint(2, "%s's map:\n", p->name);
-								fprintmap(2, p);
-								fprint(2, "%s's map:\n", op->name);
-								fprintmap(2, op);
-							}
-							n0 = truerand();
-							if(debug)
-								fprint(2, "let the game begin: %s plays, %s waits\n", m->pl[n0&1]->name, m->pl[(n0+1)&1]->name);
-							chanprint(m->pl[n0&1]->io.out, "play\n");
-							m->pl[n0&1]->state = Playing;
-							chanprint(m->pl[(n0+1)&1]->io.out, "wait\n");
-							broadcast(&stands, "plays %d\n", n0&1);
-						}
-					}
+					layout(cb->f[1], m, &stands, pidx, opidx);
 				break;
 			case Playing:
-				if(ct->index == CMshoot){
-					cell = coords2cell(cb->f[1]);
-					switch(gettile(op, cell)){
-					case Tship:
-						settile(op, cell, Thit);
-						chanprint(p->io.out, "hit\n");
-						cell2coords(cbuf, sizeof cbuf, cell);
-						chanprint(op->io.out, "hit %s\n", cbuf);
-						broadcast(&stands, "hit %d %s\n", p == m->pl[0]? 0: 1, cbuf);
-						if(countshipcells(op) < (debug? 12: 1)){
-							chanprint(p->io.out, "win\n");
-							chanprint(op->io.out, "lose\n");
-							p->state = Waiting0;
-							p->battle = nil;
-							op->state = Waiting0;
-							op->battle = nil;
-							broadcast(&stands, "won %d\n", p == m->pl[0]? 0: 1);
-							freemsg(msg);
-							goto Finish;
-						}
-						goto Swapturn;
-					case Twater:
-						settile(op, cell, Tmiss);
-						chanprint(p->io.out, "miss\n");
-						cell2coords(cbuf, sizeof cbuf, cell);
-						chanprint(op->io.out, "miss %s\n", cbuf);
-						broadcast(&stands, "miss %d %s\n", p == m->pl[0]? 0: 1, cbuf);
-Swapturn:
-						chanprint(p->io.out, "wait\n");
-						chanprint(op->io.out, "play\n");
-						p->state = Waiting;
-						op->state = Playing;
-						broadcast(&stands, "plays %d\n", op == m->pl[0]? 0: 1);
-						if(debug)
-							fprint(2, "%s plays, %s waits\n", op->name, p->name);
-						break;
-					}
-				}
+				if(ct->index == CMshoot)
+					matchisover = shoot(cb->f[1], m, &stands, pidx, opidx);
 				break;
 			}
 Nocmd:
 			free(cb);
 			freemsg(msg);
+			if(matchisover)
+				goto Finish;
 			break;
 		case CTL:
-			if(debug) fprint(2, "[%d] battleproc rcvd '%s' from p(fd=%d) on ctl\n", getpid(), msg->body, msg->from->io.fd);
+			if(debug) fprint(2, "[%d] battleproc rcvd '%s' from p(fd=%d) on ctl\n",
+						getpid(), msg->body, msg->from->io.fd);
 
 			p = msg->from;
+			pidx = p == m->pl[0]? 0: 1;
+			opidx = pidx^1;
+			op = m->pl[opidx];
+
 			if(strcmp(msg->body, "player left") == 0){
 				if(p->state == Watching){
 					leaveseat(&stands, p);
 					freeplayer(p);
 				}else{
-					op = p == m->pl[0]? m->pl[1]: m->pl[0];
 					chanprint(op->io.out, "win\n");
 					op->state = Waiting0;
 					op->battle = nil;
-					broadcast(&stands, "won %d\n", op == m->pl[0]? 0: 1);
+
+					broadcast(&stands, "won %d\n", opidx);
+
 					freeplayer(p);
 					freemsg(msg);
 					goto Finish;
@@ -562,10 +613,12 @@ Nocmd:
 				p->battle = m;
 				chanprint(p->io.out, "watching %d %s %s\n",
 					m->id, m->pl[0]->name, m->pl[1]->name);
+
 				for(i = 0; i < nelem(m->pl); i++){
 					if(m->pl[i]->state != Outlaying){
 						bitpackmap(buf, sizeof buf, m->pl[i]);
-						chanprint(p->io.out, "outlayed %d %.*[\n", i, sizeof buf, buf);
+						chanprint(p->io.out, "outlayed %d %.*[\n",
+									i, sizeof buf, buf);
 					}
 					if(m->pl[i]->state == Playing)
 						chanprint(p->io.out, "plays %d\n", i);
