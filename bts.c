@@ -402,7 +402,8 @@ drawinfo(Image *dst)
 	p = subpt(localboard.bbox.min, Pt(font->width+2+Borderwidth,0));
 	vstring(dst, p, pal[PCWhite], ZP, font, gamestate == Watching? match.pl[0].uid: uid);
 
-	if(gamestate == Outlaying){
+	switch(gamestate){
+	case Outlaying:
 		if(curship != nil){
 			snprint(aux, sizeof aux, "%s (%d)", shipname(curship-armada), curship->ncells);
 			p = Pt(SCRW/2 - stringwidth(font, aux)/2, SCRH-Boardmargin);
@@ -415,7 +416,8 @@ drawinfo(Image *dst)
 			p = Pt(SCRW/2 - stringwidth(font, s)/2, SCRH-Boardmargin+font->height);
 			string(dst, p, pal[PCYellow], ZP, font, s);
 		}
-	}else if(gamestate == Watching){
+		break;
+	case Watching:
 		for(i = 0; i < nelem(match.pl); i++)
 			if(match.pl[i].state == Playing){
 				snprint(aux, sizeof aux, "it's %s's turn", match.pl[i].uid);
@@ -430,6 +432,7 @@ drawinfo(Image *dst)
 		s = "lay out their fleet";
 		p = Pt(SCRW/2 - stringwidth(font, s)/2, SCRH-Boardmargin+font->height);
 		string(dst, p, pal[PCBlue], ZP, font, s);
+		break;
 	}
 }
 
@@ -923,99 +926,141 @@ processcmd(char *cmd)
 		return;
 	}
 
-	if(ct->index == CMwin)
+	switch(ct->index){
+	case CMwin:
 		celebrate();
-	else if(ct->index == CMlose)
+		break;
+	case CMlose:
 		keelhaul();
+		break;
+	}
 
 	switch(gamestate){
 	case Waiting0:
-		if(ct->index == CMid)
+		switch(ct->index){
+		case CMid:
 			chanprint(egress, "id %s\n", uid);
-		else if(ct->index == CMqueued){
+			break;
+		case CMqueued:
 			gamestate = Ready;
 			csetcursor(mctl, &patrolcursor);
-		}else if(ct->index == CMmatches && !matches->filling){
-			matches->clear(matches);
-			matches->filling = 1;
-		}else if(ct->index == CMmatch && matches->filling)
-			matches->add(matches, strtoul(cb->f[1], nil, 10), smprint("%s vs %s", cb->f[2], cb->f[3]));
-		else if(ct->index == CMendmatches && matches->filling)
-			matches->filling = 0;
-		else if(ct->index == CMwatching){
+			break;
+		case CMmatches:
+			if(!matches->filling){
+				matches->clear(matches);
+				matches->filling = 1;
+			}
+			break;
+		case CMmatch:
+			if(matches->filling)
+				matches->add(matches, strtoul(cb->f[1], nil, 10),
+						smprint("%s vs %s", cb->f[2], cb->f[3]));
+			break;
+		case CMendmatches:
+			if(matches->filling)
+				matches->filling = 0;
+			break;
+		case CMwatching:
 			match.id = strtoul(cb->f[1], nil, 10);
+
 			snprint(match.pl[0].uid, sizeof match.pl[0].uid, "%s", cb->f[2]);
 			snprint(match.pl[1].uid, sizeof match.pl[1].uid, "%s", cb->f[3]);
+
 			match.pl[0].state = Outlaying;
 			match.pl[1].state = Outlaying;
+
 			match.bl[0] = &localboard;
 			match.bl[1] = &alienboard;
 			gamestate = Watching;
+
 			if(!silent){
 				stopaudio(playlist[SBG0]);
 				playaudio(playlist[SBG2]);
 			}
+			break;
 		}
 		break;
 	case Ready:
-		if(ct->index == CMlayout){
+		switch(ct->index){
+		case CMlayout:
 			gamestate = Outlaying;
 			curship = &armada[0];
+
 			if(!silent){
 				stopaudio(playlist[SBG0]);
 				playaudio(playlist[SBG2]);
 			}
-		}else if(ct->index == CMoid)
+			break;
+		case CMoid:
 			snprint(oid, sizeof oid, "%s", cb->f[1]);
+			break;
+		}
 		break;
 	case Watching:
-		if(ct->index == CMplayeroutlay){
+		switch(ct->index){
+		case CMplayeroutlay:
 			idx = strtoul(cb->f[1], nil, 10);
 			if(dec64(buf, sizeof buf, cb->f[2], strlen(cb->f[2])) < 0)
 				sysfatal("dec64 failed");
 			bitunpackmap(match.bl[idx], buf, sizeof buf);
 			match.pl[idx].state = Waiting;
-		}else if(ct->index == CMplayerhit){
+			break;
+		case CMplayerhit:
 			idx = strtoul(cb->f[1], nil, 10);
 			cell = coords2cell(cb->f[2]);
 			settile(match.bl[idx^1], cell, Thit);
-		}else if(ct->index == CMplayermiss){
+			break;
+		case CMplayermiss:
 			idx = strtoul(cb->f[1], nil, 10);
 			cell = coords2cell(cb->f[2]);
 			settile(match.bl[idx^1], cell, Tmiss);
-		}else if(ct->index == CMplayerplays){
+			break;
+		case CMplayerplays:
 			idx = strtoul(cb->f[1], nil, 10);
 			match.pl[idx].state = Playing;
 			match.pl[idx^1].state = Waiting;
-		}else if(ct->index == CMplayerwon){
+			break;
+		case CMplayerwon:
 			idx = strtoul(cb->f[1], nil, 10);
 			announcewinner(match.pl[idx].uid);
+			break;
 		}
 		break;
 	case Outlaying:
-		if(ct->index == CMwait){
+		switch(ct->index){
+		case CMwait:
 			gamestate = Waiting;
 			csetcursor(mctl, &waitcursor);
-		}else if(ct->index == CMplay)
+			break;
+		case CMplay:
 			gamestate = Playing;
+			break;
+		}
 		break;
 	case Playing:
-		if(ct->index == CMwait){
+		switch(ct->index){
+		case CMwait:
 			gamestate = Waiting;
 			csetcursor(mctl, &waitcursor);
-		}else if(ct->index == CMwehit)
+			break;
+		case CMwehit:
 			settile(&alienboard, lastshot, Thit);
-		else if(ct->index == CMwemiss){
+			break;
+		case CMwemiss:
 			if(!silent)
 				playaudio(playlist[SWATER]);
+
 			settile(&alienboard, lastshot, Tmiss);
+			break;
 		}
 		break;
 	case Waiting:
-		if(ct->index == CMplay){
+		switch(ct->index){
+		case CMplay:
 			gamestate = Playing;
 			csetcursor(mctl, nil);
-		}else if(ct->index == CMtheyhit){
+			break;
+		case CMtheyhit:
 			cell = coords2cell(cb->f[1]);
 			for(i = 0; i < nelem(armada); i++)
 				if(ptinrect(fromboard(&localboard, cell), armada[i].bbox)){
@@ -1023,9 +1068,11 @@ processcmd(char *cmd)
 					armada[i].hit[(int)vec2len(cell)] = 1;
 					break;
 				}
-		}else if(ct->index == CMtheymiss){
+			break;
+		case CMtheymiss:
 			cell = coords2cell(cb->f[1]);
 			settile(&localboard, cell, Tmiss);
+			break;
 		}
 		break;
 	}
