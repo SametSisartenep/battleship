@@ -135,6 +135,7 @@ char titlefontpath[] = "font/gunmetal/gunmetal.48.font";
 Font *titlefont;
 char winspec[32];
 char uid[8+1], oid[8+1];
+Image *coverimg;
 Sprite *spritetab[NVFX];
 Vfx vfxqueue;
 Channel *drawchan;
@@ -353,6 +354,7 @@ drawtitle(Image *dst)
 	static char s[] = "BATTLESHIP";
 
 	string(dst, Pt(SCRW/2 - stringwidth(titlefont, s)/2, 0), pal[PCWhite], ZP, titlefont, s);
+	draw(dst, rectaddpt(coverimg->r, subpt(dst->r.max, subpt(coverimg->r.max, coverimg->r.min))), coverimg, nil, ZP);
 }
 
 void
@@ -612,6 +614,8 @@ initvfx(void)
 {
 	char aux[64];
 
+	snprint(aux, sizeof aux, "%s/%s", assetdir, "vfx/battleship.png");
+	coverimg = readpngimage(aux);
 	snprint(aux, sizeof aux, "%s/%s", assetdir, "vfx/hit.png");
 	spritetab[VFXHit] = readpngsprite(aux, ZP, Rect(0, 0, 32, 32), 12, 100);
 	snprint(aux, sizeof aux, "%s/%s", assetdir, "vfx/miss.png");

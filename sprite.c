@@ -90,27 +90,44 @@ decproc(void *arg)
 	close(pfd[1]);
 
 	execl("/bin/png", "png", "-t9", nil);
-	threadexitsall("execl: %r");
+	sysfatal("execl: %r");
+}
+
+Image *
+readpngimage(char *path)
+{
+	Image *i;
+	int fd, pfd[3];
+
+	if(pipe(pfd) < 0)
+		sysfatal("pipe: %r");
+	fd = open(path, OREAD);
+	if(fd < 0)
+		sysfatal("open: %r");
+	pfd[2] = fd;
+	switch(fork()){
+	case -1:
+		sysfatal("fork: %r");
+	case 0:
+		decproc(pfd);
+	default:
+		close(pfd[1]);
+		i = readimage(display, pfd[0], 1);
+		close(pfd[0]);
+		close(fd);
+	}
+
+	return i;
 }
 
 Sprite *
 readpngsprite(char *sheetfile, Point sp, Rectangle r, int nframes, ulong period)
 {
 	Image *sheet;
-	int fd, pfd[3];
 
-	if(pipe(pfd) < 0)
-		sysfatal("pipe: %r");
-	fd = open(sheetfile, OREAD);
-	if(fd < 0)
-		sysfatal("readpngsprite: %r");
-	pfd[2] = fd;
-	procrfork(decproc, pfd, mainstacksize, RFFDG|RFNAMEG|RFNOTEG);
-	close(pfd[1]);
-	sheet = readimage(display, pfd[0], 1);
-	close(pfd[0]);
-	close(fd);
-
+	sheet = readpngimage(sheetfile);
+	if(sheet == nil)
+		sysfatal("readpngimage: %r");
 	return newsprite(sheet, sp, r, nframes, period);
 }
 
