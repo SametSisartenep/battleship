@@ -254,6 +254,15 @@ csetcursor(Mousectl *mc, Cursor *c)
 }
 
 void
+playvfx(int idx, Point p, int times)
+{
+	if(idx < 0 || idx > NVFX)
+		return;
+
+	addvfx(&vfxqueue, newvfx(spritetab[idx]->clone(spritetab[idx]), p, times));
+}
+
+void
 resetgame(void)
 {
 	int i;
@@ -616,10 +625,14 @@ initvfx(void)
 
 	snprint(aux, sizeof aux, "%s/%s", assetdir, "vfx/battleship.png");
 	coverimg = readpngimage(aux);
+
 	snprint(aux, sizeof aux, "%s/%s", assetdir, "vfx/hit.png");
 	spritetab[VFXHit] = readpngsprite(aux, ZP, Rect(0, 0, 32, 32), 12, 100);
 	snprint(aux, sizeof aux, "%s/%s", assetdir, "vfx/miss.png");
 	spritetab[VFXMiss] = readpngsprite(aux, ZP, Rect(0, 0, 32, 32), 7, 150);
+	snprint(aux, sizeof aux, "%s/%s", assetdir, "vfx/shining.png");
+	spritetab[VFXShine] = readpngsprite(aux, ZP, Rect(0, 0, 50, 50), 11, 100);
+
 	initvfxq(&vfxqueue);
 }
 
@@ -815,8 +828,14 @@ mouse(Mousectl *mc)
 	mc->xy = subpt(mc->xy, screen->r.min);
 
 	if(gamestate == Waiting0){
-		for(b = mainbtns; b < mainbtns+nelem(mainbtns); b++)
-			b->status = ptinrect(mc->xy, b->r)? BHover: BRest;
+		for(b = mainbtns; b < mainbtns+nelem(mainbtns); b++){
+			if(ptinrect(mc->xy, b->r)){
+				if(b->status == BRest)
+					playvfx(VFXShine, addpt(b->r.min, Pt(Btnborder, Btnborder)), 1);
+				b->status = BHover;
+			}else
+				b->status = BRest;
+		}
 		nbsend(drawchan, nil);
 
 		if((selmatch = matches->update(matches, mc, drawchan)) >= 0){
@@ -1030,17 +1049,13 @@ processcmd(char *cmd)
 			idx = strtoul(cb->f[1], nil, 10);
 			cell = coords2cell(cb->f[2]);
 			settile(match.bl[idx^1], cell, Thit);
-			addvfx(&vfxqueue,
-				newvfx(spritetab[VFXHit]->clone(spritetab[VFXHit]),
-					addpt(fromboard(match.bl[idx^1], cell), Pt(TW/2, TH/2)), 1));
+			playvfx(VFXHit, addpt(fromboard(match.bl[idx^1], cell), Pt(TW/2, TH/2)), 1);
 			break;
 		case CMplayermiss:
 			idx = strtoul(cb->f[1], nil, 10);
 			cell = coords2cell(cb->f[2]);
 			settile(match.bl[idx^1], cell, Tmiss);
-			addvfx(&vfxqueue,
-				newvfx(spritetab[VFXMiss]->clone(spritetab[VFXMiss]),
-					addpt(fromboard(match.bl[idx^1], cell), Pt(TW/2, TH/2)), 1));
+			playvfx(VFXMiss, addpt(fromboard(match.bl[idx^1], cell), Pt(TW/2, TH/2)), 1);
 			break;
 		case CMplayerplays:
 			idx = strtoul(cb->f[1], nil, 10);
@@ -1072,18 +1087,14 @@ processcmd(char *cmd)
 			break;
 		case CMwehit:
 			settile(&alienboard, lastshot, Thit);
-			addvfx(&vfxqueue,
-				newvfx(spritetab[VFXHit]->clone(spritetab[VFXHit]),
-					addpt(fromboard(&alienboard, lastshot), Pt(TW/2, TH/2)), 1));
+			playvfx(VFXHit, addpt(fromboard(&alienboard, lastshot), Pt(TW/2, TH/2)), 1);
 			break;
 		case CMwemiss:
 			if(!silent)
 				playaudio(playlist[SWATER]);
 
 			settile(&alienboard, lastshot, Tmiss);
-			addvfx(&vfxqueue,
-				newvfx(spritetab[VFXMiss]->clone(spritetab[VFXMiss]),
-					addpt(fromboard(&alienboard, lastshot), Pt(TW/2, TH/2)), 1));
+			playvfx(VFXMiss, addpt(fromboard(&alienboard, lastshot), Pt(TW/2, TH/2)), 1);
 			break;
 		}
 		break;
@@ -1097,9 +1108,7 @@ processcmd(char *cmd)
 			cell = coords2cell(cb->f[1]);
 			for(i = 0; i < nelem(armada); i++)
 				if(ptinrect(fromboard(&localboard, cell), armada[i].bbox)){
-					addvfx(&vfxqueue,
-						newvfx(spritetab[VFXHit]->clone(spritetab[VFXHit]),
-							addpt(fromboard(&localboard, cell), Pt(TW/2, TH/2)), 1));
+					playvfx(VFXHit, addpt(fromboard(&localboard, cell), Pt(TW/2, TH/2)), 1);
 					cell = subpt2(cell, armada[i].p);
 					armada[i].hit[(int)vec2len(cell)] = 1;
 					break;
@@ -1108,9 +1117,7 @@ processcmd(char *cmd)
 		case CMtheymiss:
 			cell = coords2cell(cb->f[1]);
 			settile(&localboard, cell, Tmiss);
-			addvfx(&vfxqueue,
-				newvfx(spritetab[VFXMiss]->clone(spritetab[VFXMiss]),
-					addpt(fromboard(&localboard, cell), Pt(TW/2, TH/2)), 1));
+			playvfx(VFXMiss, addpt(fromboard(&localboard, cell), Pt(TW/2, TH/2)), 1);
 			break;
 		}
 		break;

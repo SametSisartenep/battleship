@@ -19,6 +19,7 @@ enum {
 
 	VFXHit = 0,
 	VFXMiss,
+	VFXShine,
 	NVFX,
 
 	OH = 0,		/* horizontal */
