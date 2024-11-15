@@ -7,7 +7,7 @@ enum {
 	Tmiss,
 	NTILES,
 
-	TBITS = 2, /* ceil(log(NTILES)/log(2)) */
+	TBITS = 2,	/* ceil(log(NTILES)/log(2)) */
 	TMASK = (1<<TBITS) - 1,
 
 	Scarrier = 0,
@@ -17,8 +17,12 @@ enum {
 	Sdestroyer,
 	NSHIPS,
 
-	OH, /* horizontal */
-	OV, /* vertical */
+	VFXHit = 0,
+	VFXMiss,
+	NVFX,
+
+	OH = 0,		/* horizontal */
+	OV,		/* vertical */
 
 	GMPvP = 0,
 	GMPvAI,
@@ -178,6 +182,35 @@ struct Button
 	Rectangle r;
 	int status;
 	void (*handler)(Button*);
+};
+
+typedef struct Sprite Sprite;
+typedef struct Vfx Vfx;
+
+struct Sprite
+{
+	Image *sheet;
+	Point sp;
+	Rectangle r;
+	int nframes;
+	int curframe;
+	ulong period;
+	ulong elapsed;
+
+	void (*step)(Sprite*, ulong);
+	void (*draw)(Sprite*, Image*, Point);
+	Sprite *(*clone)(Sprite*);
+};
+
+struct Vfx
+{
+	Sprite *a;	/* animation */
+	Point p;
+	int times;	/* to repeat. -1 loops forever */
+	Vfx *prev, *next;
+
+	void (*step)(Vfx*, ulong);
+	void (*draw)(Vfx*, Image*);
 };
 
 typedef struct Mentry Mentry;

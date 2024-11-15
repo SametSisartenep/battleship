@@ -135,6 +135,8 @@ char titlefontpath[] = "font/gunmetal/gunmetal.48.font";
 Font *titlefont;
 char winspec[32];
 char uid[8+1], oid[8+1];
+Sprite *spritetab[NVFX];
+Vfx vfxqueue;
 Channel *drawchan;
 Channel *reconnc;
 Channel *ingress, *egress;
@@ -277,12 +279,8 @@ resetgame(void)
 Point
 vstring(Image *dst, Point p, Image *src, Point sp, Font *f, char *s)
 {
-	char buf[2];
-
-	buf[1] = 0;
 	while(*s){
-		buf[0] = *s++;
-		string(dst, p, src, sp, f, buf);
+		stringn(dst, p, src, sp, f, s++, 1);
 		p.y += font->height;
 	}
 	return p;
@@ -408,6 +406,9 @@ drawinfo(Image *dst)
 			snprint(aux, sizeof aux, "%s (%d)", shipname(curship-armada), curship->ncells);
 			p = Pt(SCRW/2 - stringwidth(font, aux)/2, SCRH-Boardmargin);
 			string(dst, p, pal[PCYellow], ZP, font, aux);
+			s = "MMB to rotate the ship";
+			p = Pt(SCRW/2 - stringwidth(font, s)/2, SCRH-Boardmargin+font->height);
+			string(dst, p, pal[PCYellow], ZP, font, s);
 		}else{
 			s = "done with the layout?";
 			p = Pt(SCRW/2 - stringwidth(font, s)/2, SCRH-Boardmargin);
@@ -452,6 +453,8 @@ drawconclusion(Image *dst)
 void
 redraw(void)
 {
+	Vfx *vfx;
+
 	lockdisplay(display);
 
 	draw(screenb, screenb->r, pal[PCBlack], nil, ZP);
@@ -468,6 +471,8 @@ redraw(void)
 		drawinfo(screenb);
 		break;
 	}
+	for(vfx = vfxqueue.next; vfx != &vfxqueue; vfx = vfx->next)
+		vfx->draw(vfx, screenb);
 	drawconclusion(screenb);
 
 	draw(screen, screen->r, screenb, nil, ZP);
@@ -600,6 +605,18 @@ initarmada(void)
 		s->hit = emalloc(s->ncells*sizeof(int));
 		memset(s->hit, 0, s->ncells*sizeof(int));
 	}
+}
+
+void
+initvfx(void)
+{
+	char aux[64];
+
+	snprint(aux, sizeof aux, "%s/%s", assetdir, "vfx/hit.png");
+	spritetab[VFXHit] = readpngsprite(aux, ZP, Rect(0, 0, 32, 32), 12, 100);
+	snprint(aux, sizeof aux, "%s/%s", assetdir, "vfx/miss.png");
+	spritetab[VFXMiss] = readpngsprite(aux, ZP, Rect(0, 0, 32, 32), 7, 150);
+	initvfxq(&vfxqueue);
 }
 
 void
@@ -763,11 +780,11 @@ mmb(Mousectl *mc)
 		if(!rectinrect(curship->bbox, localboard.bbox)){
 			switch(curship->orient){
 			case OH:
-				curship->bbox.min.x -= curship->bbox.max.x-localboard.bbox.max.x;
+				curship->bbox.min.x -= curship->bbox.max.x - localboard.bbox.max.x;
 				curship->bbox.max.x = localboard.bbox.max.x;
 				break;
 			case OV:
-				curship->bbox.min.y -= curship->bbox.max.y-localboard.bbox.max.y;
+				curship->bbox.min.y -= curship->bbox.max.y - localboard.bbox.max.y;
 				curship->bbox.max.y = localboard.bbox.max.y;
 				break;
 			}
@@ -878,7 +895,7 @@ celebrate(void)
 void
 keelhaul(void)
 {
-	static char s[] = "…YOU LOST";
+	static char s[] = "...YOU LOST";
 
 	conclusion.c = pal[PCRed];
 	conclusion.s = s;
@@ -1009,11 +1026,17 @@ processcmd(char *cmd)
 			idx = strtoul(cb->f[1], nil, 10);
 			cell = coords2cell(cb->f[2]);
 			settile(match.bl[idx^1], cell, Thit);
+			addvfx(&vfxqueue,
+				newvfx(spritetab[VFXHit]->clone(spritetab[VFXHit]),
+					addpt(fromboard(match.bl[idx^1], cell), Pt(TW/2, TH/2)), 1));
 			break;
 		case CMplayermiss:
 			idx = strtoul(cb->f[1], nil, 10);
 			cell = coords2cell(cb->f[2]);
 			settile(match.bl[idx^1], cell, Tmiss);
+			addvfx(&vfxqueue,
+				newvfx(spritetab[VFXMiss]->clone(spritetab[VFXMiss]),
+					addpt(fromboard(match.bl[idx^1], cell), Pt(TW/2, TH/2)), 1));
 			break;
 		case CMplayerplays:
 			idx = strtoul(cb->f[1], nil, 10);
@@ -1045,12 +1068,18 @@ processcmd(char *cmd)
 			break;
 		case CMwehit:
 			settile(&alienboard, lastshot, Thit);
+			addvfx(&vfxqueue,
+				newvfx(spritetab[VFXHit]->clone(spritetab[VFXHit]),
+					addpt(fromboard(&alienboard, lastshot), Pt(TW/2, TH/2)), 1));
 			break;
 		case CMwemiss:
 			if(!silent)
 				playaudio(playlist[SWATER]);
 
 			settile(&alienboard, lastshot, Tmiss);
+			addvfx(&vfxqueue,
+				newvfx(spritetab[VFXMiss]->clone(spritetab[VFXMiss]),
+					addpt(fromboard(&alienboard, lastshot), Pt(TW/2, TH/2)), 1));
 			break;
 		}
 		break;
@@ -1064,6 +1093,9 @@ processcmd(char *cmd)
 			cell = coords2cell(cb->f[1]);
 			for(i = 0; i < nelem(armada); i++)
 				if(ptinrect(fromboard(&localboard, cell), armada[i].bbox)){
+					addvfx(&vfxqueue,
+						newvfx(spritetab[VFXHit]->clone(spritetab[VFXHit]),
+							addpt(fromboard(&localboard, cell), Pt(TW/2, TH/2)), 1));
 					cell = subpt2(cell, armada[i].p);
 					armada[i].hit[(int)vec2len(cell)] = 1;
 					break;
@@ -1072,6 +1104,9 @@ processcmd(char *cmd)
 		case CMtheymiss:
 			cell = coords2cell(cb->f[1]);
 			settile(&localboard, cell, Tmiss);
+			addvfx(&vfxqueue,
+				newvfx(spritetab[VFXMiss]->clone(spritetab[VFXMiss]),
+					addpt(fromboard(&localboard, cell), Pt(TW/2, TH/2)), 1));
 			break;
 		}
 		break;
@@ -1101,7 +1136,9 @@ soundproc(void *)
 void
 timerproc(void *)
 {
-	uvlong t0, Δt, acc;
+	Vfx *vfx;
+	uvlong t0, Δt, φt, acc;
+	int refresh;
 
 	threadsetname("timer");
 
@@ -1109,7 +1146,16 @@ timerproc(void *)
 	acc = 0;
 	for(;;){
 		Δt = nsec() - t0;
+		φt = Δt/1000000ULL;
 		acc += Δt;
+
+		refresh = 0;
+		for(vfx = vfxqueue.next; vfx != &vfxqueue; vfx = vfx->next){
+			vfx->step(vfx, φt);
+			refresh = 1;
+		}
+		if(refresh)
+			nbsend(drawchan, nil);
 
 		if(gamestate == Waiting0 && acc >= 5*SEC){
 			chanprint(egress, "watch\n");
@@ -1117,7 +1163,7 @@ timerproc(void *)
 		}
 
 		t0 += Δt;
-		sleep(HZ2MS(10));
+		sleep(HZ2MS(20));
 	}
 }
 
@@ -1232,6 +1278,7 @@ threadmain(int argc, char *argv[])
 	initmainbtns();
 	initboards();
 	initarmada();
+	initvfx();
 	matches = newmenulist(14*font->height, "ongoing matches");
 	gamestate = Waiting0;
 

@@ -36,6 +36,22 @@ Menulist *newmenulist(int, char*);
 void delmenulist(Menulist*);
 
 /*
+ * sprite
+ */
+Sprite *newsprite(Image*, Point, Rectangle, int, ulong);
+Sprite *readsprite(char*, Point, Rectangle, int, ulong);
+Sprite *readpngsprite(char*, Point, Rectangle, int, ulong);
+void delsprite(Sprite*);
+
+/*
+ * vfx
+ */
+Vfx *newvfx(Sprite*, Point, int);
+void delvfx(Vfx*);
+void addvfx(Vfx*, Vfx*);
+void initvfxq(Vfx*);
+
+/*
  * parse
  */
 Cmdbuf *parsecmd(char*, int);

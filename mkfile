@@ -13,6 +13,8 @@ OFILES=\
 	andy.$O\
 	menulist.$O\
 	mixer.$O\
+	sprite.$O\
+	vfx.$O\
 
 HFILES=\
 	dat.h\
