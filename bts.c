@@ -708,15 +708,16 @@ confirmdone(Mousectl *mc)
 	};
 
 	csetcursor(mc, &anchor);
-	readmouse(mc);
-	while(mc->buttons == 0)
+	while(mc->buttons != 0)			/* ignore any buttons already pressed */
+		readmouse(mc);
+	while(mc->buttons == 0)			/* wait for a button press */
 		readmouse(mc);
 	if(mc->buttons != 4){
 		while(nbrecv(kctl->c, nil))	/* flush key presses */
 		csetcursor(mc, nil);
 		return 0;
 	}
-	while(mc->buttons){
+	while(mc->buttons){			/* commit action on button release */
 		if(mc->buttons != 4){
 			while(nbrecv(kctl->c, nil));
 			csetcursor(mc, nil);
