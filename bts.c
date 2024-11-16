@@ -955,6 +955,9 @@ processcmd(char *cmd)
 	Point2 cell;
 	uchar buf[BY2MAP];
 	int i, idx;
+	struct {
+		int high, off;
+	} menuparams;
 
 	if(debug)
 		fprint(2, "rcvd '%s'\n", cmd);
@@ -987,6 +990,8 @@ processcmd(char *cmd)
 			break;
 		case CMmatches:
 			if(!matches->filling){
+				menuparams.high = matches->high;
+				menuparams.off = matches->off;
 				matches->clear(matches);
 				matches->filling = 1;
 			}
@@ -997,8 +1002,12 @@ processcmd(char *cmd)
 						smprint("%s vs %s", cb->f[2], cb->f[3]));
 			break;
 		case CMendmatches:
-			if(matches->filling)
+			if(matches->filling){
+				matches->high = min(menuparams.high, matches->nentries-1);
+				matches->off = menuparams.off > matches->nentries - matches->maxvis?
+					0: menuparams.off;
 				matches->filling = 0;
+			}
 			break;
 		case CMwatching:
 			match.id = strtoul(cb->f[1], nil, 10);

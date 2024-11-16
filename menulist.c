@@ -32,7 +32,7 @@ menulist_add(Menulist *ml, int id, char *title)
 		ml->r.max.x = ml->r.min.x + ew;
 	}
 
-	if(ml->nentries > Maxvisitems){
+	if(ml->nentries > ml->maxvis){
 		ml->sr.min = subpt(ml->r.min, Pt(Scrollwidth+2*Menuborder,0));
 		ml->sr.max = Pt(ml->r.min.x-2*Menuborder, ml->r.max.y);
 	}else if(ml->nentries > 1)
@@ -74,7 +74,7 @@ menulist_update(Menulist *ml, Mousectl *mc, Channel *drawchan)
 	if(ml->nentries < 1)
 		return -1;
 
-	r = ml->nentries > Maxvisitems? Rpt(ml->sr.min, ml->r.max): ml->r;
+	r = ml->nentries > ml->maxvis? Rpt(ml->sr.min, ml->r.max): ml->r;
 
 	selected = -1;
 	if(ptinrect(mc->xy, r)){
@@ -88,7 +88,7 @@ menulist_update(Menulist *ml, Mousectl *mc, Channel *drawchan)
 					lastlmbms = mc->msec;
 			}
 		}
-		if(mc->buttons != oldm.buttons && ml->nentries > Maxvisitems)
+		if(mc->buttons != oldm.buttons && ml->nentries > ml->maxvis)
 			/* scrolling */
 			switch(mc->buttons){
 			case 1: if(!ptinrect(mc->xy, ml->sr)) break;
@@ -97,7 +97,7 @@ menulist_update(Menulist *ml, Mousectl *mc, Channel *drawchan)
 				break;
 			case 4: if(!ptinrect(mc->xy, ml->sr)) break;
 			case 16:
-				ml->off = min(ml->off + (mc->xy.y - ml->sr.min.y)/(font->height+Vspace), ml->nentries-Maxvisitems);
+				ml->off = min(ml->off + (mc->xy.y - ml->sr.min.y)/(font->height+Vspace), ml->nentries-ml->maxvis);
 				break;
 			}
 	}
@@ -145,10 +145,10 @@ menulist_draw(Menulist *ml, Image *dst)
 	}
 
 	/* draw scroll */
-	if(ml->nentries > Maxvisitems){
+	if(ml->nentries > ml->maxvis){
 		border(dst, ml->sr, -Menuborder, bc, ZP);
 		draw(dst, ml->sr, display->black, nil, ZP);
-		draw(dst, Rpt(addpt(ml->sr.min, Pt(0,ml->off*Dy(ml->sr)/ml->nentries)), Pt(ml->sr.max.x,ml->sr.min.y + (ml->off+Maxvisitems)*Dy(ml->sr)/ml->nentries)), display->white, nil, ZP);
+		draw(dst, Rpt(addpt(ml->sr.min, Pt(0,ml->off*Dy(ml->sr)/ml->nentries)), Pt(ml->sr.max.x,ml->sr.min.y + (ml->off+ml->maxvis)*Dy(ml->sr)/ml->nentries)), display->white, nil, ZP);
 	}
 }
 
@@ -164,6 +164,7 @@ newmenulist(int topmargin, char *title)
 	w = max(stringwidth(font, title), stringwidth(font, none));
 	ml->r.min = Pt(SCRW/2 - w/2, topmargin);
 	ml->r.max = addpt(ml->r.min, Pt(w, font->height+Vspace));
+	ml->maxvis = Maxvisitems;
 	ml->high = -1;
 	ml->add = menulist_add;
 	ml->clear = menulist_clear;

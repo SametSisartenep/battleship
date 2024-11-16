@@ -236,8 +236,9 @@ struct Menulist
 	Mlist;
 	char *title;
 	Rectangle r, sr;	/* content and scroll rects */
+	int maxvis;		/* max amount of visible entries */
 	int high;		/* [-1,nitems) where -1 is none */
-	int off;		/* entry offset ∈ [0, nitems-Maxvisitems] */
+	int off;		/* entry offset ∈ [0, nitems-maxvis] */
 
 	void (*add)(Menulist*, int, char*);
 	void (*clear)(Menulist*);
