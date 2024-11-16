@@ -48,6 +48,7 @@ enum {
 	CMplayermiss,
 	CMplayerplays,
 	CMplayerwon,
+	CMstats,
 };
 Cmdtab svcmd[] = {
 	CMid,		"id",		1,
@@ -71,6 +72,7 @@ Cmdtab svcmd[] = {
 	CMplayermiss,	"miss",		3,
 	CMplayerplays,	"plays",	2,
 	CMplayerwon,	"won",		2,
+	CMstats,	"stats",	2,
 };
 
 int debug;
@@ -156,6 +158,7 @@ int layoutdone;
 Point2 lastshot;
 Menulist *matches;
 MatchInfo match; /* of which we are an spectator */
+int nplayers;
 
 struct {
 	Image *c; /* color */
@@ -373,23 +376,39 @@ drawgameoptions(Image *dst)
 
 	for(b = mainbtns; b < mainbtns+nelem(mainbtns); b++){
 		draw(dst, b->r, pal[b->status? PCBlack: PCWhite], nil, ZP);
-		border(dst, b->r, Btnborder, pal[PCBrown], ZP);
+		border(dst, b->r, Btnborder, pal[PCWater], ZP);
 		string(dst, addpt(b->r.min, Pt(Dx(b->r)/2 - stringwidth(font, b->label)/2, Btnpadding + Btnborder)), pal[b->status? PCWhite: PCBlack], ZP, font, b->label);
 	}
+}
+
+void
+drawgamestats(Image *dst)
+{
+	Point p, dim;
+	char buf[32];
+
+	if(nplayers < 1)
+		return;
+
+	snprint(buf, sizeof buf, "%d player%s connected", nplayers, nplayers == 1? "": "s");
+	dim = stringsize(font, buf);
+	p = Pt(matches->r.min.x + Dx(matches->r)/2, matches->r.max.y + font->height);
+	p.x -= dim.x/2;
+	string(dst, p, pal[PCWater], ZP, font, buf);
 }
 
 void
 drawinfo(Image *dst)
 {
 	Point p;
-	char *s, aux[32];
+	char *s, buf[32];
 	int i;
 
 	s = "";
 	switch(gamestate){
 	case Watching:
-		snprint(aux, sizeof aux, "watching %s vs. %s", match.pl[0].uid, match.pl[1].uid);
-		s = aux;
+		snprint(buf, sizeof buf, "watching %s vs. %s", match.pl[0].uid, match.pl[1].uid);
+		s = buf;
 		break;
 	case Ready: s = "looking for players"; break;
 	case Outlaying: s = "place the fleet"; break;
@@ -414,9 +433,9 @@ drawinfo(Image *dst)
 	switch(gamestate){
 	case Outlaying:
 		if(curship != nil){
-			snprint(aux, sizeof aux, "%s (%d)", shipname(curship-armada), curship->ncells);
-			p = Pt(SCRW/2 - stringwidth(font, aux)/2, SCRH-Boardmargin);
-			string(dst, p, pal[PCYellow], ZP, font, aux);
+			snprint(buf, sizeof buf, "%s (%d)", shipname(curship-armada), curship->ncells);
+			p = Pt(SCRW/2 - stringwidth(font, buf)/2, SCRH-Boardmargin);
+			string(dst, p, pal[PCYellow], ZP, font, buf);
 			s = "MMB to rotate the ship";
 			p = Pt(SCRW/2 - stringwidth(font, s)/2, SCRH-Boardmargin+font->height);
 			string(dst, p, pal[PCYellow], ZP, font, s);
@@ -432,9 +451,9 @@ drawinfo(Image *dst)
 	case Watching:
 		for(i = 0; i < nelem(match.pl); i++)
 			if(match.pl[i].state == Playing){
-				snprint(aux, sizeof aux, "it's %s's turn", match.pl[i].uid);
-				p = Pt(SCRW/2 - stringwidth(font, aux)/2, SCRH-Boardmargin);
-				string(dst, p, pal[PCBlue], ZP, font, aux);
+				snprint(buf, sizeof buf, "it's %s's turn", match.pl[i].uid);
+				p = Pt(SCRW/2 - stringwidth(font, buf)/2, SCRH-Boardmargin);
+				string(dst, p, pal[PCBlue], ZP, font, buf);
 				return;
 			}
 
@@ -474,6 +493,7 @@ redraw(void)
 		drawtitle(screenb);
 		drawgameoptions(screenb);
 		matches->draw(matches, screenb);
+		drawgamestats(screenb);
 		break;
 	default:
 		drawboard(screenb, &alienboard);
@@ -1027,6 +1047,9 @@ processcmd(char *cmd)
 				playaudio(playlist[SBG2]);
 			}
 			break;
+		case CMstats:
+			nplayers = strtoul(cb->f[1], nil, 10);
+			break;
 		}
 		break;
 	case Ready:
@@ -1179,6 +1202,7 @@ timerproc(void *)
 
 		if(gamestate == Waiting0 && acc >= 5*SEC){
 			chanprint(egress, "watch\n");
+			chanprint(egress, "stats\n");
 			acc = 0;
 		}
 
@@ -1319,8 +1343,8 @@ threadmain(int argc, char *argv[])
 
 	drawchan = chancreate(sizeof(void*), 1);
 	reconnc = chancreate(sizeof(void*), 1);
-	ingress = chancreate(sizeof(char*), 1);
-	egress = chancreate(sizeof(char*), 1);
+	ingress = chancreate(sizeof(char*), 8);
+	egress = chancreate(sizeof(char*), 8);
 	threadcreate(netrecvthread, &fd, mainstacksize);
 	threadcreate(netsendthread, &fd, mainstacksize);
 	nbsend(drawchan, nil);

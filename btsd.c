@@ -15,6 +15,7 @@ enum {
 	CMshoot,
 	CMgetmatches,
 	CMwatch,
+	CMgetstats,
 	CMleave,
 };
 Cmdtab clcmd[] = {
@@ -24,6 +25,7 @@ Cmdtab clcmd[] = {
 	CMshoot, 	"shoot",	2,
 	CMgetmatches,	"watch",	1,
 	CMwatch,	"watch",	2,
+	CMgetstats,	"stats",	1,
 	CMleave,	"leave",	1,
 };
 
@@ -33,6 +35,7 @@ Channel *playerq;
 Channel *mmctl; /* matchmaker's */
 Match theater;
 RWLock theaterlk;
+Ref nplayers;
 
 
 Player *
@@ -187,6 +190,12 @@ sendmatches(Channel *c)
 }
 
 void
+sendstats(Channel *c)
+{
+	chanprint(c, "stats %ld\n", nplayers.ref);
+}
+
+void
 broadcast(Stands *s, char *fmt, ...)
 {
 	va_list arg;
@@ -260,6 +269,8 @@ playerproc(void *arg)
 
 	threadsetname("player %s", p->nci->raddr);
 
+	incref(&nplayers);
+
 	threadsetgrp(p->io.fd);
 	threadcreate(netrecvthread, &p->io, mainstacksize);
 	threadcreate(netsendthread, &p->io, mainstacksize);
@@ -287,6 +298,7 @@ playerproc(void *arg)
 				if(ct->index == CMid && strlen(cb->f[1]) > 0){
 					snprint(p->name, sizeof p->name, "%s", cb->f[1]);
 					sendmatches(p->io.out);
+					sendstats(p->io.out);
 				}else
 					chanprint(p->io.out, "id\n");
 			}else
@@ -304,7 +316,8 @@ playerproc(void *arg)
 							chanprint(p->io.out, "no such match\n");
 						else
 							sendp(m->ctl, newmsg(p, estrdup("take seat")));
-					}
+					}else if(ct->index == CMgetstats)
+						sendstats(p->io.out);
 					break;
 				case Watching:
 					if(ct->index == CMleave)
@@ -338,6 +351,9 @@ Nocmd:
 End:
 	if(debug)
 		fprint(2, "[%d] lost connection\n", getpid());
+
+	decref(&nplayers);
+
 	threadkillgrp(threadgetgrp());
 	threadexits(nil);
 }

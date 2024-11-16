@@ -43,7 +43,7 @@ enum {
 	BHover,
 
 	Boardmargin = 50,
-	Btnborder = 4,
+	Btnborder = 2,
 	Btnpadding = 2,
 	TW = 16,
 	TH = TW,
