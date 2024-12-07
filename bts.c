@@ -647,11 +647,11 @@ initvfx(void)
 	coverimg = readpngimage(aux);
 
 	snprint(aux, sizeof aux, "%s/%s", assetdir, "vfx/hit.png");
-	spritetab[VFXHit] = readpngsprite(aux, ZP, Rect(0, 0, 32, 32), 12, 100);
+	spritetab[VFXHit] = readpngsprite(aux, ZP, Rect(0, 0, 32, 32), 12, 60);
 	snprint(aux, sizeof aux, "%s/%s", assetdir, "vfx/miss.png");
-	spritetab[VFXMiss] = readpngsprite(aux, ZP, Rect(0, 0, 32, 32), 7, 150);
+	spritetab[VFXMiss] = readpngsprite(aux, ZP, Rect(0, 0, 32, 32), 7, 100);
 	snprint(aux, sizeof aux, "%s/%s", assetdir, "vfx/shining.png");
-	spritetab[VFXShine] = readpngsprite(aux, ZP, Rect(0, 0, 50, 50), 11, 100);
+	spritetab[VFXShine] = readpngsprite(aux, ZP, Rect(0, 0, 50, 50), 11, 50);
 
 	initvfxq(&vfxqueue);
 }
